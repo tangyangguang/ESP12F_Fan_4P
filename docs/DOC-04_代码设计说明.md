@@ -1,0 +1,390 @@
+# DOC-04 代码设计说明
+
+| 字段 | 内容 |
+|------|------|
+| 文档编号 | DOC-04 |
+| 项目名称 | 壁炉烟囱正压送风控制器 |
+| 版本 | v1.2 |
+| 日期 | 2026-04-30 |
+| 状态 | 已确认 |
+
+---
+
+## 1. 核心数据结构
+
+### 1.1 系统配置（通过 EbConfig 命名空间 `fan` 存储）
+
+| 键名 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `fan/min_effective_speed` | int32_t | 10 | 最低有效转速，范围 0-50，单位% |
+| `fan/soft_start_time` | int32_t | 1000 | 软启动渐变时间，单位毫秒，范围 0-10000 |
+| `fan/soft_stop_time` | int32_t | 1000 | 软停止渐变时间，单位毫秒，范围 0-10000 |
+| `fan/block_detect_time` | int32_t | 1500 | 堵转检测时间，单位 ms，范围 100-5000 |
+| `fan/sleep_wait_time` | int32_t | 60 | 风扇停止后到进入休眠的等待时间，单位秒 |
+| `fan/access_password` | string | "admin123" | Web 访问密码 |
+| `fan/ir_protocol_0` ~ `fan/ir_protocol_5` | int32_t | 0 | 6 个按键的红外协议类型（0=加速，1=减速，2=停止，3=30min，4=1h，5=2h） |
+| `fan/ir_code_0` ~ `fan/ir_code_5` | int32_t | 0 | 6 个按键的红外编码值（32 位完整码） |
+| `fan/auto_restore` | bool | true | 断电后是否自动恢复运行状态（false=上电停止） |
+| `fan/last_speed` | int32_t | 0 | 上次运行转速，断电恢复用 |
+| `fan/last_timer_remaining` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |
+| `fan/total_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，掉电不丢失 |
+
+### 1.2 运行时状态（内存中）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `current_gear` | uint8_t | 当前档位，范围 0-4 |
+| `current_speed` | uint8_t | 当前实际输出转速，范围 0-100 |
+| `target_speed` | uint8_t | 目标转速，渐变过程中使用 |
+| `timer_remaining` | uint32_t | 定时剩余时间，单位秒，0=无定时 |
+| `run_duration` | uint32_t | 总累计运行时长，单位秒，不清零 |
+| `uptime` | uint32_t | 本次启动后连续运行时长，单位秒 |
+| `is_blocked` | bool | 是否处于堵转保护状态 |
+| `wifi_connected` | bool | WiFi 是否连接成功 |
+| `ntp_synced` | bool | NTP 网络时间是否同步成功 |
+| `ip_address` | char[16] | 设备 IP 地址 |
+| `mac_address` | char[18] | WiFi MAC 地址，格式 xx:xx:xx:xx:xx:xx |
+| `wifi_rssi` | int8_t | WiFi 信号强度，单位 dBm |
+| `error_code` | uint16_t | 错误码，0=无错误，1=堵转，2=配置损坏 |
+
+### 1.3 档位设计
+
+| 档位 | 速度 | LED 亮度 | 说明 |
+|------|------|---------|------|
+| 0 档 | 0% | 熄灭 | 停止 |
+| 1 档 | 25% | 25% PWM | 低速 |
+| 2 档 | 50% | 50% PWM | 中速 |
+| 3 档 | 75% | 75% PWM | 高速 |
+| 4 档 | 100% | 100% PWM | 全速 |
+
+---
+
+## 2. 行为规则
+
+### 2.1 正常运行规则
+
+1. **转速控制**：0-100% 无级调节；加速时设置值<最低有效转速自动提升，减速时设置值≤最低有效转速直接降到 0；启动时按软启动时间平滑渐变，停止时按软停止时间平滑渐变
+2. **双按键控制**：加速键短按档位 +1（最高到 4 档，不循环），减速键短按档位 -1（最低到 0 档，不循环），同时长按 >5s 恢复出厂设置
+3. **红外遥控控制**：支持 NEC/SONY/RC5/RC6/SAMSUNG 等常见协议；通过 Web 页面触发学习模式，按下遥控器对应按键自动记录协议类型和编码值；加速/减速每次调整 5%
+4. **Web 控制**：支持全量状态查询、转速调节、定时设置、参数配置、固件升级、日志查询，通过 `fan-xxxx.local` 访问
+5. **定时功能**：倒计时结束自动停止，定时过程中可随时取消或修改，新设置直接覆盖旧定时；预设最大 8 小时，自定义最大 99 小时
+6. **堵转检测**：输出≥最低有效转速且连续检测时间无转速反馈时，立即切断输出并报警；保护触发后任意控制源发送启动指令可触发恢复尝试（1.5s 内有转速则恢复）；重启自动清除
+7. **低功耗休眠**：风扇停止且无操作超时后进入 Modem Sleep，保持 WiFi 连接和 Web 服务可访问，响应<1000ms
+8. **断电恢复**：`auto_restore=true` 时恢复到断电前状态（转速 + 定时剩余时间），`auto_restore=false` 时上电停止
+9. **运行时长统计**：持续累计总运行时长和本次启动运行时长，不清零，掉电不丢失
+10. **WiFi 重连**：连接失败后默认 30 秒重试，连续 5 次失败后延长到 5 分钟
+
+### 2.2 优先级规则
+
+1. **停止指令优先级最高**：任何状态下收到停止指令，立即执行停止，取消所有定时任务
+2. **故障保护优先级高**：堵转保护触发后，任意控制源均可发送启动指令触发恢复尝试
+3. **三种控制方式平等**：本地/红外/Web 指令优先级相同，最后一次收到的指令生效
+4. **手动操作覆盖定时**：定时运行过程中收到手动调速/停止指令，自动取消当前定时任务
+
+### 2.3 异常处理规则
+
+1. **配置读取失败**：自动加载默认配置，记录告警日志，不影响正常运行
+2. **WiFi 连接失败**：前 5 次每隔 30 秒重试，之后每隔 5 分钟重试，不影响本地/红外控制
+3. **堵转保护触发**：立即切断风扇输出，记录故障日志；任意控制源发送启动指令可触发恢复尝试
+4. **红外接收错误**：误码或无效编码直接丢弃，不执行任何操作
+5. **红外学习超时**：学习模式 10 秒超时自动退出，不保存未学习的按键
+
+---
+
+## 3. 模块接口定义
+
+### 3.1 FanDriver（HAL 层）
+
+```cpp
+enum FanState {
+    FAN_STATE_IDLE,
+    FAN_STATE_SOFT_START,
+    FAN_STATE_RUNNING,
+    FAN_STATE_SOFT_STOP,
+    FAN_STATE_BLOCKED
+};
+
+class FanDriver {
+public:
+    FanDriver(uint8_t pwm_pin, uint8_t tach_pin);
+    bool begin();
+    void tick();  // 每帧调用，处理软启动/软停止渐变和堵转检测
+
+    bool setSpeed(uint8_t speed);
+    uint8_t getSpeed() const;
+    uint16_t getRpm() const;
+    FanState getState() const;
+
+    void setSoftStartTime(uint16_t ms);
+    void setSoftStopTime(uint16_t ms);
+    void setBlockDetectTime(uint16_t ms);
+
+    bool isBlocked() const;
+    void resetBlock();
+};
+```
+
+### 3.2 ButtonDriver（HAL 层）
+
+```cpp
+enum ButtonEvent {
+    BTN_NONE,
+    BTN_ACCEL_SHORT,    // 加速键短按
+    BTN_DECEL_SHORT,    // 减速键短按
+    BTN_BOTH_LONG       // 两键同时长按 >5s
+};
+
+class ButtonDriver {
+public:
+    ButtonDriver(uint8_t accel_pin, uint8_t decel_pin);
+    bool begin();
+    ButtonEvent getEvent();  // 每帧调用
+};
+```
+
+### 3.3 LedIndicator（HAL 层）
+
+```cpp
+enum LedMode {
+    LED_OFF,           // 熄灭
+    LED_ON,            // 常亮
+    LED_SLOW_BLINK,    // 慢闪 1Hz
+    LED_FAST_BLINK,    // 快闪 5Hz
+    LED_SINGLE_FLASH   // 闪1下后恢复原状态
+};
+
+class LedIndicator {
+public:
+    LedIndicator(uint8_t pin, bool active_low = true);
+    bool begin();
+    void tick();  // 每帧调用
+
+    void setGear(uint8_t gear);  // 0-4 档，自动设置 PWM 亮度
+    void setOverride(LedMode mode);  // WiFi/故障等覆盖模式
+    void flashOnce();  // 操作反馈闪1下
+};
+```
+
+### 3.4 IRReceiverDriver（HAL 层）
+
+```cpp
+enum IREvent {
+    IR_EVENT_NONE,
+    IR_EVENT_SPEED_UP,
+    IR_EVENT_SPEED_DOWN,
+    IR_EVENT_STOP,
+    IR_EVENT_TIMER_30M,
+    IR_EVENT_TIMER_1H,
+    IR_EVENT_TIMER_2H
+};
+
+class IRReceiverDriver {
+public:
+    IRReceiverDriver(uint8_t recv_pin);
+    bool begin();
+    IREvent getEvent();  // 每帧调用
+
+    // 红外学习
+    bool startLearning(uint8_t key_index);  // 进入学习模式，key_index: 0-5
+    bool isLearning() const;
+    uint8_t getLearnedKeyIndex() const;
+
+    // 配置
+    void setKeyCode(uint8_t key_index, uint8_t protocol, uint64_t code);
+    bool getKeyCode(uint8_t key_index, uint8_t* protocol, uint64_t* code) const;
+};
+```
+
+### 3.5 FanController（Business 层）
+
+```cpp
+enum SystemState {
+    SYS_INIT,
+    SYS_IDLE,
+    SYS_RUNNING,
+    SYS_SLEEP,
+    SYS_ERROR
+};
+
+class FanController {
+public:
+    FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& led, IRReceiverDriver& ir);
+    bool begin();
+    void tick();  // 每帧调用
+
+    SystemState getState() const;
+    uint8_t getCurrentGear() const;
+    uint8_t getCurrentSpeed() const;
+    uint32_t getTimerRemaining() const;
+    uint32_t getTotalRunDuration() const;
+    bool isBlocked() const;
+
+    // 外部指令接口，供 Web/其他模块调用
+    bool setSpeed(uint8_t speed);
+    bool setTimer(uint32_t seconds);
+    bool stop();
+
+private:
+    void _handleInit();
+    void _handleIdle();
+    void _handleRunning();
+    void _handleSleep();
+    void _handleError();
+    void _processButtonEvents();
+    void _processIREvents();
+    void _processTimer();
+    void _processSleep();
+    void _saveRuntimeState();
+};
+```
+
+### 3.6 FanWeb（Application 层）
+
+```cpp
+class FanWeb {
+public:
+    FanWeb(FanController& controller, IRReceiverDriver& ir);
+    void registerRoutes();  // 注册所有 Web 路由到 EbWeb
+
+private:
+    // 页面处理函数
+    static void _handleStatusPage();
+    static void _handleConfigPage();
+    static void _handleLogsPage();
+
+    // API 处理函数
+    static void _handleApiStatus();
+    static void _handleApiSpeed();
+    static void _handleApiTimer();
+    static void _handleApiStop();
+    static void _handleApiConfig();
+    static void _handleApiLogs();
+    static void _handleApiReset();
+    static void _handleApiIrLearn();
+    static void _handleApiIrStatus();
+
+    static FanController* _controller;
+    static IRReceiverDriver* _ir;
+};
+```
+
+---
+
+## 4. Web 页面设计
+
+### 4.1 访问方式
+
+- **mDNS**：`http://fan-xxxx.local/`（xxxx 为 MAC 地址后四位）
+- **IP**：`http://[设备 IP 地址]/`
+- **鉴权**：HTTP Basic Auth，用户名 `admin`，默认密码 `admin123`
+
+### 4.2 页面清单
+
+| 路径 | 功能 | 内容 |
+|------|------|------|
+| `/` | 状态主页 | 当前档位、转速、定时剩余时间、累计运行时长、WiFi 状态/信号强度/IP、NTP 同步状态、当前时间、故障状态 |
+| `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、访问密码、红外学习、上电恢复策略 |
+| `/logs` | 运行日志页 | 最近 100 条操作/告警/故障日志，按时间倒序排列 |
+| `/esp-base/` | EspBase 管理页 | 内置页面：WiFi 配置、OTA 升级、芯片信息、固件信息 |
+| `/esp-base/ota` | OTA 升级页 | 上传固件文件进行局域网 OTA 升级 |
+
+### 4.3 状态主页布局
+
+```
+┌─────────────────────────────────────┐
+│  壁炉烟囱正压送风控制器              │
+├─────────────────────────────────────┤
+│  当前档位：2 档                      │
+│  当前转速：50%                       │
+│  运行状态：运行中                    │
+│  定时剩余：30 分钟                   │
+│  累计运行时长：12 小时 35 分         │
+├─────────────────────────────────────┤
+│  WiFi：已连接 | 信号：-65 dBm       │
+│  IP：192.168.1.100                  │
+│  NTP：已同步 | 当前时间：2026-04-30  │
+├─────────────────────────────────────┤
+│  [调速滑块] [停止] [定时设置]        │
+└─────────────────────────────────────┘
+```
+
+---
+
+## 5. Web Service API
+
+所有 API 采用 HTTP Basic Auth 鉴权，用户名 `admin`，默认密码 `admin123`。返回 JSON 格式，HTTP 200 表示操作成功。
+
+| 方法 | 路径 | 功能 | 请求示例 | 返回示例 |
+|------|------|------|----------|----------|
+| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"running","gear":2,"speed":50,"timer_remaining":1800,"uptime":3600,"wifi_connected":true,"wifi_rssi":-65,"ip":"192.168.1.100","ntp_synced":true,"error_code":0}}` |
+| POST | `/api/speed` | 设置风扇转速 | `{"speed":70}` | `{"ok":true}` |
+| POST | `/api/timer` | 设置定时关机 | `{"seconds":3600}` | `{"ok":true}` |
+| POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |
+| GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start_time":1000,"soft_stop_time":1000,"block_detect_time":1500,"sleep_wait_time":60,"auto_restore":true}}` |
+| POST | `/api/config` | 修改配置参数 | `{"min_effective_speed":15,"soft_start_time":500}` | `{"ok":true}` |
+| GET | `/api/logs` | 获取日志列表 | - | `{"ok":true,"data":[{"time":1713157200,"type":"info","module":"fan","content":"Speed set to 50"}]}` |
+| POST | `/api/reset` | 恢复出厂设置 | - | `{"ok":true}` |
+| POST | `/api/ir/learn` | 开始红外学习 | `{"key_index": 0}` | `{"ok":true,"learning":true,"timeout":10}` |
+| GET | `/api/ir/status` | 获取红外学习状态 | - | `{"ok":true,"learning":false,"codes":[{"protocol":1,"code":38456},{"protocol":0,"code":0},...]}` |
+
+---
+
+## 6. 持久化存储设计
+
+### 6.1 存储方案
+
+使用 EspBase 的 `EbConfig` 模块，基于 ESP8266 Flash EEPROM 模拟，总存储大小 16KB，扇区擦写寿命≥10 万次。
+
+### 6.2 命名空间规划
+
+| 命名空间 | 用途 | 键数量 |
+|----------|------|--------|
+| `fan` | 风扇配置和运行时状态 | 20 个 |
+| `eb` | EspBase 内置（WiFi 凭证等） | 2 个 |
+
+### 6.3 版本迁移策略
+
+- 启动时读取配置，与当前固件期望版本比较
+- 版本一致：正常加载所有配置
+- 版本不一致：加载所有默认配置，记录告警日志，保留用户 WiFi 配置
+- 读取失败（首次烧录/Flash 损坏）：写入所有默认配置，进入 AP 配网模式
+- 出厂重置时：清除 `fan` 命名空间所有配置，恢复默认值
+
+### 6.4 日志存储
+
+使用 EspBase 的 `EbFileLog` 模块，日志写入 `/logs/app.log` 文件：
+- 每条日志格式：`[时间戳] [级别] [模块] 消息内容`
+- 现阶段只记录相对启动时间，绝对时间字段留空
+- 日志文件大小受文件系统配额限制，自动滚动覆盖（默认 3 个文件，每个 32KB）
+
+---
+
+## 7. 初始化流程
+
+`EspBase::begin()` 自动按依赖顺序初始化所有启用模块（`ESP_BASE_AUTO_BEGIN_OPTIONAL=1`）：
+
+1. **核心模块**：Logger, Config, Bus
+2. **非网络模块**：Storage, FileLog, Watchdog, Scheduler, Dispatcher, Sleep
+3. **网络模块**：WiFi（异步连接）
+4. **延迟初始化**：Web, OTA, mDNS 在 WiFi 连接成功后由 `EspBase::handle()` 自动触发
+
+**项目代码只需调用**：
+```cpp
+EspBase::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
+if (!EspBase::begin()) return; // 自动初始化所有模块
+```
+
+---
+
+## 8. 引脚配置
+
+| GPIO | 功能 | 说明 |
+|------|------|------|
+| GPIO0 | BOOT 键 | 长按 1s 清除 WiFi 凭证 |
+| GPIO2 | 板载 LED | ESP-12E 模块内置，低电平亮，支持 PWM 调光 |
+| GPIO4 | 减速键 | 内部上拉，按下为低，仅短按 |
+| GPIO5 | PWM_OUT | 风扇 PWM 输出，频率 25KHz |
+| GPIO12 | FAN_TACH | 风扇转速反馈输入 |
+| GPIO13 | IR_RECV | 1838 红外接收头 |
+| GPIO14 | 加速键 | 内部上拉，按下为低，仅短按 |
+| GPIO16 | 保留 | 深度睡眠唤醒预留（需连接 RST） |

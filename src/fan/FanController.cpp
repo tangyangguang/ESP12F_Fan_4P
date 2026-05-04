@@ -50,6 +50,9 @@ FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& le
     , _last_run_tick(0)
     , _last_operation_tick(0)
     , _sleep_wait_time(60)
+    , _soft_start_time(1000)
+    , _soft_stop_time(1000)
+    , _block_detect_time(1500)
     , _min_effective_speed(10)
     , _is_sleeping(false)
     , _sleep_entry_tick(0)
@@ -151,7 +154,7 @@ bool FanController::getAutoRestore() const { return _auto_restore; }
 
 void FanController::setAutoRestore(bool enable) {
     _auto_restore = enable;
-    _saveConfig();
+    Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
 }
 
 void FanController::setWebPassword(const char* password) {
@@ -237,32 +240,35 @@ uint8_t FanController::getMinEffectiveSpeed() const { return _min_effective_spee
 void FanController::setMinEffectiveSpeed(uint8_t speed) {
     if (speed > 50) speed = 50;
     _min_effective_speed = speed;
-    _saveConfig();
+    Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
 }
 
 uint16_t FanController::getSoftStartTime() const {
-    return static_cast<uint16_t>(Esp8266BaseConfig::getInt(KEY_SOFT_START, 1000));
+    return _soft_start_time;
 }
 
 void FanController::setSoftStartTime(uint16_t ms) {
+    _soft_start_time = ms;
     Esp8266BaseConfig::setInt(KEY_SOFT_START, static_cast<int32_t>(ms));
     _fan.setSoftStartTime(ms);
 }
 
 uint16_t FanController::getSoftStopTime() const {
-    return static_cast<uint16_t>(Esp8266BaseConfig::getInt(KEY_SOFT_STOP, 1000));
+    return _soft_stop_time;
 }
 
 void FanController::setSoftStopTime(uint16_t ms) {
+    _soft_stop_time = ms;
     Esp8266BaseConfig::setInt(KEY_SOFT_STOP, static_cast<int32_t>(ms));
     _fan.setSoftStopTime(ms);
 }
 
 uint16_t FanController::getBlockDetectTime() const {
-    return static_cast<uint16_t>(Esp8266BaseConfig::getInt(KEY_BLOCK_DETECT, 1500));
+    return _block_detect_time;
 }
 
 void FanController::setBlockDetectTime(uint16_t ms) {
+    _block_detect_time = ms;
     Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, static_cast<int32_t>(ms));
     _fan.setBlockDetectTime(ms);
 }
@@ -271,7 +277,7 @@ uint16_t FanController::getSleepWaitTime() const { return _sleep_wait_time; }
 
 void FanController::setSleepWaitTime(uint16_t seconds) {
     _sleep_wait_time = seconds;
-    _saveConfig();
+    Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
 }
 
 void FanController::_handleInit() { _state = SYS_IDLE; }
@@ -378,7 +384,7 @@ void FanController::_processButtonEvents() {
 void FanController::_processIREvents() {
     IREvent event = _ir.getEvent();
     if (_ir.consumeLearnedCode()) {
-        _saveConfig();
+        _saveIRCodes();
         ESP8266BASE_LOG_I("FanCtrl", "IR learned code persisted");
     }
     if (event == IR_EVENT_NONE) return;
@@ -513,9 +519,12 @@ void FanController::_loadConfig() {
     int32_t soft_stop = Esp8266BaseConfig::getInt(KEY_SOFT_STOP, 1000);
     int32_t block_detect = Esp8266BaseConfig::getInt(KEY_BLOCK_DETECT, 1500);
 
-    _fan.setSoftStartTime(static_cast<uint16_t>(soft_start));
-    _fan.setSoftStopTime(static_cast<uint16_t>(soft_stop));
-    _fan.setBlockDetectTime(static_cast<uint16_t>(block_detect));
+    _soft_start_time = static_cast<uint16_t>(soft_start);
+    _soft_stop_time = static_cast<uint16_t>(soft_stop);
+    _block_detect_time = static_cast<uint16_t>(block_detect);
+    _fan.setSoftStartTime(_soft_start_time);
+    _fan.setSoftStopTime(_soft_stop_time);
+    _fan.setBlockDetectTime(_block_detect_time);
 
     _run_duration = static_cast<uint32_t>(
         Esp8266BaseConfig::getInt(KEY_RUN_DURATION, 0));
@@ -543,13 +552,14 @@ void FanController::_loadConfig() {
 
 void FanController::_saveConfig() {
     Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
-    Esp8266BaseConfig::setInt(KEY_SOFT_START, getSoftStartTime());
-    Esp8266BaseConfig::setInt(KEY_SOFT_STOP, getSoftStopTime());
-    Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, getBlockDetectTime());
+    Esp8266BaseConfig::setInt(KEY_SOFT_START, _soft_start_time);
+    Esp8266BaseConfig::setInt(KEY_SOFT_STOP, _soft_stop_time);
+    Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, _block_detect_time);
     Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
+}
 
-    // Save IR codes
+void FanController::_saveIRCodes() {
     char key[20];
     for (uint8_t i = 0; i < 6; i++) {
         uint8_t proto;

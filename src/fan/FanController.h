@@ -73,10 +73,11 @@ private:
     void _saveRuntimeState();
     void _loadConfig();
     void _saveConfig();
+    void _saveIRCodes();
 
 #ifdef UNIT_TEST
 public:
-    void testSaveConfig() { _saveConfig(); }
+    void testSaveConfig() { _saveConfig(); _saveIRCodes(); }
 #endif
 
     FanDriver& _fan;
@@ -92,6 +93,9 @@ public:
     uint32_t _last_run_tick;
     uint32_t _last_operation_tick;
     uint16_t _sleep_wait_time;
+    uint16_t _soft_start_time;
+    uint16_t _soft_stop_time;
+    uint16_t _block_detect_time;
     uint8_t _min_effective_speed;
 
     bool _is_sleeping;

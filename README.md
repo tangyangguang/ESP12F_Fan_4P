@@ -114,7 +114,7 @@ pio test -e native
 
 ## 依赖
 
-- Esp8266Base：本地库 `/Users/tyg/dir/claude_dir/Esp8266Base`
+- Esp8266Base：`https://github.com/tangyangguang/Esp8266Base`
 - IRremoteESP8266：`crankyoldgit/IRremoteESP8266@^2.8.6`
 
 `platformio.ini` 使用 Esp8266Base 提供的 4 MB Flash / 2 MB 文件系统 linker script，便于保存滚动日志。

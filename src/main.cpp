@@ -62,7 +62,7 @@ void setup() {
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/stop", FanWeb::handleApiStop);
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/config", FanWeb::handleApiConfig);
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/ir/learn", FanWeb::handleApiIrLearn);
-    webRoutesOk &= Esp8266BaseWeb::addApi("/api/ir/status", FanWeb::handleApiIrStatus);
+    webRoutesOk &= Esp8266BaseWeb::addApi("/api/status", FanWeb::handleApiStatus);
     if (!webRoutesOk) {
         ESP8266BASE_LOG_E("Main", "custom Web route registration incomplete");
     }

@@ -13,7 +13,6 @@ namespace EbWeb {
     void send(uint16_t code, const char* content_type, const char* content);
     void sendJSON(uint16_t code, const char* json);
     void sendHTML(uint16_t code, const char* html);
-    void setAuth(const char* username, const char* password);
     void addRoute(const char* path, void (*handler)());
     void addPostRoute(const char* path, void (*handler)());
 

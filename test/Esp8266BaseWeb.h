@@ -32,9 +32,10 @@ namespace Esp8266BaseWeb {
     void sendFooter();
     void sendChunk(const char* text);
     void sendContent_P(const char* text);
-    void addPage(const char* path, void (*handler)());
-    void addApi(const char* path, void (*handler)());
-    void setAuth(const char* user, const char* pass);
+    bool addPage(const char* path, void (*handler)());
+    bool addPage(const char* path, const char* title, void (*handler)());
+    bool addApi(const char* path, void (*handler)());
+    void setDefaultAuth(const char* user, const char* pass);
 }
 
 #endif

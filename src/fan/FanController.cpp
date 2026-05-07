@@ -26,7 +26,6 @@ const char* KEY_SOFT_STOP = "fan_soft_stop";
 const char* KEY_BLOCK_DETECT = "fan_block_detect";
 const char* KEY_SLEEP_WAIT = "fan_sleep_wait";
 const char* KEY_AUTO_RESTORE = "fan_auto_restore";
-const char* KEY_WEB_PASSWORD = "fan_web_pass";
 const char* KEY_LAST_SPEED = "fan_last_speed";
 const char* KEY_LAST_TIMER = "fan_last_timer";
 const char* KEY_RUN_DURATION = "fan_run_duration";
@@ -155,12 +154,6 @@ bool FanController::getAutoRestore() const { return _auto_restore; }
 void FanController::setAutoRestore(bool enable) {
     _auto_restore = enable;
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
-}
-
-void FanController::setWebPassword(const char* password) {
-    Esp8266BaseConfig::setStr(KEY_WEB_PASSWORD, password);
-    Esp8266BaseWeb::setAuth("admin", password);
-    ESP8266BASE_LOG_I("FanCtrl", "Web password updated");
 }
 
 void FanController::attemptBlockRecovery() {
@@ -528,12 +521,6 @@ void FanController::_loadConfig() {
 
     _run_duration = static_cast<uint32_t>(
         Esp8266BaseConfig::getInt(KEY_RUN_DURATION, 0));
-
-    char web_password[24];
-    if (Esp8266BaseConfig::getStr(KEY_WEB_PASSWORD, web_password, sizeof(web_password), "") &&
-        web_password[0] != '\0') {
-        Esp8266BaseWeb::setAuth("admin", web_password);
-    }
 
     // Load IR codes
     char key[20];

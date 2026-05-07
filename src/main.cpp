@@ -42,6 +42,13 @@ void setup() {
     // Firmware identification & Hostname
     Esp8266Base::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
     Esp8266Base::setHostname("esp-fan");
+    Esp8266BaseWeb::setDefaultAuth("admin", "admin123");
+    Esp8266BaseWeb::setDeviceName("ESP Fan");
+    Esp8266BaseWeb::setHomePath("/fan");
+    Esp8266BaseWeb::setHomeMode(Esp8266BaseWebHomeMode::FUSED_HOME);
+    Esp8266BaseWeb::setSystemNavMode(Esp8266BaseWebSystemNavMode::FOOTER_COMPACT);
+    Esp8266BaseWeb::setBuiltinLabel(Esp8266BaseWebBuiltinLabel::HOME, "System");
+    Esp8266BaseWeb::setBuiltinLabel(Esp8266BaseWebBuiltinLabel::AUTH, "Password");
     Esp8266BaseLog::enableFileSink("/logs/app.log", 16384, ESP8266BASE_LOG_LEVEL, 4);
     Esp8266BaseLog::enableConfigAudit(true);
     Esp8266BaseLog::enableConfigReadAudit(true);
@@ -55,8 +62,8 @@ void setup() {
 
     // Register custom Web pages and APIs (must be after begin())
     bool webRoutesOk = true;
-    webRoutesOk &= Esp8266BaseWeb::addPage("/fan", FanWeb::handleStatusPage);
-    webRoutesOk &= Esp8266BaseWeb::addPage("/config", FanWeb::handleConfigPage);
+    webRoutesOk &= Esp8266BaseWeb::addPage("/fan", "Fan", FanWeb::handleStatusPage);
+    webRoutesOk &= Esp8266BaseWeb::addPage("/config", "Settings", FanWeb::handleConfigPage);
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/speed", FanWeb::handleApiSpeed);
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/timer", FanWeb::handleApiTimer);
     webRoutesOk &= Esp8266BaseWeb::addApi("/api/stop", FanWeb::handleApiStop);

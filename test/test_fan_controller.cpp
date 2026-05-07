@@ -142,7 +142,6 @@ namespace {
     static int      g_web_arg_cnt  = 0;
     static uint16_t g_web_last_code = 0;
     static char     g_web_last_body[1024] = {};
-    static char     g_web_auth_pass[24] = {};
     static MockWebServer g_mock_server;
 }
 
@@ -186,12 +185,10 @@ namespace Esp8266BaseWeb {
     void sendFooter()                  {}
     void sendChunk(const char*)        {}
     void sendContent_P(const char*)    {}
-    void addPage(const char*, void(*)()) {}
-    void addApi(const char*, void(*)())  {}
-    void setAuth(const char*, const char* pass) {
-        strncpy(g_web_auth_pass, pass ? pass : "", sizeof(g_web_auth_pass) - 1);
-        g_web_auth_pass[sizeof(g_web_auth_pass) - 1] = '\0';
-    }
+    bool addPage(const char*, void(*)()) { return true; }
+    bool addPage(const char*, const char*, void(*)()) { return true; }
+    bool addApi(const char*, void(*)())  { return true; }
+    void setDefaultAuth(const char*, const char*) {}
 }
 
 // ─── Include sources under test ─────────────────────────────────────────────
@@ -599,9 +596,6 @@ void test_controller_config_persistence() {
     ctrl.setBlockDetectTime(2000);
     ctrl.setSleepWaitTime(120);
     ctrl.setAutoRestore(false);
-    ctrl.setWebPassword("newpass");
-    g_web_auth_pass[0] = '\0';
-
     FanDriver fan2(5, 12); ButtonDriver btn2(14, 4);
     LedIndicator led2(2, true); IRReceiverDriver ir2(13);
     FanController ctrl2(fan2, btn2, led2, ir2);
@@ -613,7 +607,6 @@ void test_controller_config_persistence() {
     TEST_ASSERT_EQUAL(2000, ctrl2.getBlockDetectTime());
     TEST_ASSERT_EQUAL(120,  ctrl2.getSleepWaitTime());
     TEST_ASSERT_FALSE(ctrl2.getAutoRestore());
-    TEST_ASSERT_EQUAL_STRING("newpass", g_web_auth_pass);
 }
 
 void test_controller_ir_persistence() {

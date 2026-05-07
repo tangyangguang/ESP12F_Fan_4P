@@ -50,6 +50,7 @@ public:
     // Raw decode info (for debugging/learning display)
     uint8_t getLastProtocol() const;
     uint64_t getLastCode() const;
+    uint32_t getLearnedSequence() const;
 
 private:
     IREvent matchCode(uint8_t protocol, uint64_t code);
@@ -59,7 +60,10 @@ private:
     uint8_t _learning_key_index;
     uint32_t _learning_start_tick;
     bool _learned_dirty;
+    uint32_t _learned_sequence;
+    uint32_t _ignore_until_tick;
     static const uint32_t LEARNING_TIMEOUT_MS = 10000;
+    static const uint32_t POST_LEARN_IGNORE_MS = 1200;
 
     uint8_t _protocols[IR_KEY_COUNT];
     uint64_t _codes[IR_KEY_COUNT];

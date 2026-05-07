@@ -61,7 +61,7 @@ static const char FAN_TIMER_INPUT_END[] PROGMEM =
     "var rem=";
 static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     ";function e(i,v){var x=document.getElementById(i);if(x)x.textContent=v}"
-    "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return(h?h+'h ':'')+m+'m '+r+'s'}"
+    "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
     "function draw(d){e('st',d.state);e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('ip',d.ip);e('rssi',d.rssi+' dBm');e('clk',d.clock);e('blk',d.blocked?'Yes':'No');document.getElementById('blk').className=d.blocked?'errtxt':'oktxt';rem=d.timer_remaining;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
@@ -184,12 +184,14 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
     "<div class=panel><h3>IR learning</h3><div class='chips chips3'>"
     "<button onclick='learn(0,\"Speed Up\")'>Speed Up</button><button onclick='learn(1,\"Speed Down\")'>Speed Down</button><button onclick='learn(2,\"Stop\")'>Stop</button>"
     "<button onclick='learn(3,\"30 min\")'>30 min</button><button onclick='learn(4,\"1 h\")'>1 h</button><button onclick='learn(5,\"2 h\")'>2 h</button>"
-    "</div><div class=help>Press one, then point the remote within 10 seconds.</div></div>"
+    "</div><div class=help>Press one, then point the remote within 10 seconds.</div><span id=irMsg class='savebar muted'>Ready</span></div>"
     "<script>"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
+    "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.auto_restore.value=d.auto_restore?1:0}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{setMsg('Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
-    "function learn(i,n){fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>alert(d.ok?'Learning '+n:'Learn failed'))}"
+    "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),900)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
+    "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
     "</script>";
 
 void FanWeb::handleConfigPage() {
@@ -241,32 +243,40 @@ void FanWeb::handleConfigPage() {
 void FanWeb::handleApiStatus() {
     if (!Esp8266BaseWeb::checkAuth()) return;
     
-    char buf[384];
+    char buf[640];
     char clock[24];
     const char* stateStr;
     switch (_controller->getState()) {
-        case SYS_IDLE: stateStr = "idle"; break;
-        case SYS_RUNNING: stateStr = "running"; break;
-        case SYS_SLEEP: stateStr = "sleep"; break;
-        case SYS_ERROR: stateStr = "error"; break;
-        default: stateStr = "unknown"; break;
+        case SYS_IDLE: stateStr = "Idle"; break;
+        case SYS_RUNNING: stateStr = "Running"; break;
+        case SYS_SLEEP: stateStr = "Sleep"; break;
+        case SYS_ERROR: stateStr = "Error"; break;
+        default: stateStr = "Unknown"; break;
     }
     
     const char* ip = Esp8266BaseWiFi::isConnected() ? Esp8266BaseWiFi::ip() : "N/A";
     long rssi = Esp8266BaseWiFi::isConnected() ? (long)WiFi.RSSI() : 0;
     if (Esp8266BaseNTP::isSynced()) {
-        Esp8266BaseNTP::formatTo(clock, sizeof(clock), "%H:%M:%S");
+        Esp8266BaseNTP::formatTo(clock, sizeof(clock), "%Y-%m-%d %H:%M:%S");
     } else {
         strcpy(clock, "N/A");
     }
     
+    uint8_t ir_key = _ir->getLearnedKeyIndex();
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"timer_remaining\":%lu,"
-        "\"run_duration\":%lu,\"blocked\":%s,\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\"}}",
+        "\"run_duration\":%lu,\"blocked\":%s,\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
+        "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
+        "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%08llX\"}}",
         stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
         (unsigned long)_controller->getTimerRemaining(),
         (unsigned long)_controller->getTotalRunDuration(),
-        _controller->isBlocked() ? "true" : "false", ip, rssi, clock
+        _controller->isBlocked() ? "true" : "false", ip, rssi, clock,
+        _ir->isLearning() ? "true" : "false", ir_key,
+        (unsigned long)_ir->getLearningRemaining(),
+        (unsigned long)_ir->getLearnedSequence(),
+        _ir->getLastProtocol(),
+        (unsigned long long)_ir->getLastCode()
     );
     Esp8266BaseWeb::server().send(200, "application/json", buf);
 }
@@ -443,7 +453,10 @@ void FanWeb::handleApiIrLearn() {
         int idx = server.arg("key_index").toInt();
         if (idx >= 0 && idx < 6 && _ir->startLearning(idx)) {
             ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%d", idx);
-            server.send(200, "application/json", "{\"ok\":true,\"learning\":true,\"timeout\":10}");
+            char buf[96];
+            snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu}",
+                     (unsigned long)_ir->getLearnedSequence());
+            server.send(200, "application/json", buf);
             return;
         }
     }

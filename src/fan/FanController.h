@@ -72,6 +72,7 @@ private:
     void _saveRuntimeState();
     void _loadConfig();
     void _saveConfig();
+    void _saveIRCode(uint8_t key_index);
     void _saveIRCodes();
 
 #ifdef UNIT_TEST

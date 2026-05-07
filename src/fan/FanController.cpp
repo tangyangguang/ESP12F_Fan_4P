@@ -278,6 +278,7 @@ void FanController::_handleInit() { _state = SYS_IDLE; }
 void FanController::_handleIdle() {
     _processButtonEvents();
     _processIREvents();
+    _processTimer();
     _processSleep();
 }
 
@@ -308,6 +309,7 @@ void FanController::_handleRunning() {
 void FanController::_handleSleep() {
     _processButtonEvents();
     _processIREvents();
+    _processTimer();
 
     if (millis() - _last_operation_tick < 1000) {
         _is_sleeping = false;
@@ -377,8 +379,9 @@ void FanController::_processButtonEvents() {
 void FanController::_processIREvents() {
     IREvent event = _ir.getEvent();
     if (_ir.consumeLearnedCode()) {
-        _saveIRCodes();
-        ESP8266BASE_LOG_I("FanCtrl", "IR learned code persisted");
+        uint8_t key = _ir.getLearnedKeyIndex();
+        _saveIRCode(key);
+        ESP8266BASE_LOG_I("FanCtrl", "IR learned code persisted key=%u", key);
     }
     if (event == IR_EVENT_NONE) return;
 
@@ -546,18 +549,24 @@ void FanController::_saveConfig() {
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
 }
 
-void FanController::_saveIRCodes() {
-    char key[20];
-    for (uint8_t i = 0; i < 6; i++) {
-        uint8_t proto;
-        uint64_t code;
-        _ir.getKeyCode(i, &proto, &code);
+void FanController::_saveIRCode(uint8_t key_index) {
+    if (key_index >= IR_KEY_COUNT) return;
 
-        snprintf(key, sizeof(key), "%s%d", KEY_IR_PROTO, i);
-        Esp8266BaseConfig::setInt(key, static_cast<int32_t>(proto));
-        snprintf(key, sizeof(key), "%s%d", KEY_IR_CODE, i);
-        Esp8266BaseConfig::setInt(key, static_cast<int32_t>(code & 0xFFFFFFFF));
-        snprintf(key, sizeof(key), "%s%d_hi", KEY_IR_CODE, i);
-        Esp8266BaseConfig::setInt(key, static_cast<int32_t>((code >> 32) & 0xFFFFFFFF));
+    char key[20];
+    uint8_t proto;
+    uint64_t code;
+    _ir.getKeyCode(key_index, &proto, &code);
+
+    snprintf(key, sizeof(key), "%s%d", KEY_IR_PROTO, key_index);
+    Esp8266BaseConfig::setInt(key, static_cast<int32_t>(proto));
+    snprintf(key, sizeof(key), "%s%d", KEY_IR_CODE, key_index);
+    Esp8266BaseConfig::setInt(key, static_cast<int32_t>(code & 0xFFFFFFFF));
+    snprintf(key, sizeof(key), "%s%d_hi", KEY_IR_CODE, key_index);
+    Esp8266BaseConfig::setInt(key, static_cast<int32_t>((code >> 32) & 0xFFFFFFFF));
+}
+
+void FanController::_saveIRCodes() {
+    for (uint8_t i = 0; i < 6; i++) {
+        _saveIRCode(i);
     }
 }

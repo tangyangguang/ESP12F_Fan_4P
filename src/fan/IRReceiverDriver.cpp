@@ -10,6 +10,8 @@ IRReceiverDriver::IRReceiverDriver(uint8_t recv_pin)
     , _learning_key_index(0)
     , _learning_start_tick(0)
     , _learned_dirty(false)
+    , _learned_sequence(0)
+    , _ignore_until_tick(0)
     , _last_protocol(0)
     , _last_code(0) {
     for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
@@ -56,7 +58,7 @@ IREvent IRReceiverDriver::getEvent() {
 
     if ((int)results.decode_type <= 0 || results.value == 0) {
         irrecv.resume();
-        ESP8266BASE_LOG_W("IR", "Ignored undecoded IR frame: protocol=%d, code=0x%08llX",
+        ESP8266BASE_LOG_D("IR", "Ignored undecoded IR frame: protocol=%d, code=0x%08llX",
                           (int)results.decode_type, static_cast<unsigned long long>(results.value));
         return IR_EVENT_NONE;
     }
@@ -75,7 +77,18 @@ IREvent IRReceiverDriver::getEvent() {
         setKeyCode(_learning_key_index, _last_protocol, _last_code);
         _learning = false;
         _learned_dirty = true;
+        _learned_sequence++;
+        _ignore_until_tick = millis() + POST_LEARN_IGNORE_MS;
         return IR_EVENT_NONE;
+    }
+
+    if (_ignore_until_tick != 0) {
+        if ((int32_t)(millis() - _ignore_until_tick) < 0) {
+            ESP8266BASE_LOG_D("IR", "Ignored post-learning IR frame: protocol=%d, code=0x%08llX",
+                              _last_protocol, static_cast<unsigned long long>(_last_code));
+            return IR_EVENT_NONE;
+        }
+        _ignore_until_tick = 0;
     }
 
     // Match against learned codes
@@ -88,6 +101,7 @@ bool IRReceiverDriver::startLearning(uint8_t key_index) {
     _learning = true;
     _learning_key_index = key_index;
     _learning_start_tick = millis();
+    _ignore_until_tick = 0;
 
     ESP8266BASE_LOG_I("IR", "Learning mode started for key %d (10s timeout)", key_index);
     return true;
@@ -142,6 +156,10 @@ uint8_t IRReceiverDriver::getLastProtocol() const {
 
 uint64_t IRReceiverDriver::getLastCode() const {
     return _last_code;
+}
+
+uint32_t IRReceiverDriver::getLearnedSequence() const {
+    return _learned_sequence;
 }
 
 IREvent IRReceiverDriver::matchCode(uint8_t protocol, uint64_t code) {

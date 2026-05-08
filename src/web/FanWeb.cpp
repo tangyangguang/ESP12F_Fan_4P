@@ -21,23 +21,23 @@ FanWeb::FanWeb(FanController& controller, IRReceiverDriver& ir) {
 // Static HTML parts in PROGMEM
 static const char APP_STYLE[] PROGMEM =
     "<style>"
-    "body{padding:10px;max-width:560px}h2{font-size:1.18em;margin:2px 0 8px}h3{font-size:.98em;margin:0 0 8px}"
-    ".top{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:8px}.muted{color:#667085;font-size:.82em}"
-    ".speed{font-size:2.15em;font-weight:700;line-height:1;text-align:right}.unit{font-size:.38em;color:#667085}"
-    ".panel{border:1px solid #d9e0e8;border-radius:7px;padding:10px;margin:8px 0;background:#fff}.tight{margin-top:6px}"
-    ".stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}.stat{background:#f7f9fb;border:1px solid #edf1f5;border-radius:6px;padding:7px 8px;min-width:0}"
-    ".stat span{display:block;color:#667085;font-size:.75em}.stat b{display:block;font-size:.95em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+    "body{padding:10px;max-width:560px;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937}h2,h3{font-size:14px;font-weight:400;margin:0 0 8px;color:#111827}"
+    ".top{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:8px}.muted{color:#6b7280;font-size:14px}"
+    ".speed{font-size:38px;font-weight:600;line-height:1;text-align:right;color:#111827}.unit{font-size:16px;font-weight:400;color:#6b7280}"
+    ".panel{border:1px solid #d7dee8;border-radius:6px;padding:10px;margin:8px 0;background:#fff}.tight{margin-top:6px}"
+    ".stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}.stat{background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px;min-width:0}"
+    ".stat span{display:block;color:#6b7280;font-size:14px}.stat b{display:block;font-size:14px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111827}"
     ".chips{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.chips3{grid-template-columns:repeat(3,1fr)}"
-    "button,.btn{background:#1769aa;color:#fff;border:0;border-radius:6px;padding:10px 7px;cursor:pointer;text-align:center;text-decoration:none;font-size:.92em;min-height:38px;box-sizing:border-box}"
-    "button.secondary,.btn.secondary{background:#667085}button.danger{background:#b93815}.row{display:grid;grid-template-columns:1fr 76px;gap:7px;align-items:center;margin-top:4px}"
+    "button,.btn{background:#2563a6;color:#fff;border:0;border-radius:6px;padding:8px 7px;cursor:pointer;text-align:center;text-decoration:none;font-size:14px;font-weight:400;min-height:36px;box-sizing:border-box}"
+    "button.secondary,.btn.secondary{background:#6b7280}button.danger{background:#b64a2f}.row{display:grid;grid-template-columns:1fr 76px;gap:7px;align-items:center;margin-top:4px}"
     ".actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.actions button{min-height:40px}"
-    ".formgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{min-width:0}label{display:block;font-size:.78em;color:#344054;margin:0 0 3px}"
-    "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:1em;margin:0}"
+    ".formgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{min-width:0}label{display:block;font-size:14px;font-weight:400;color:#374151;margin:0 0 3px}"
+    "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:14px;font-weight:400;margin:0;color:#111827}"
     ".row input:not([type=submit]){height:42px;min-height:42px;margin:0!important;padding:0 10px;display:block}.row button{height:42px;min-height:42px;padding:0 7px;align-self:center}"
-    ".oktxt{color:#087443}.errtxt{color:#b42318}.help{color:#667085;font-size:.76em;margin:3px 0 0;line-height:1.3}"
-    ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f7f9fb;border:1px solid #edf1f5;font-size:.82em}.savebar.oktxt{background:#ecfdf3;border-color:#abefc6}.savebar.errtxt{background:#fef3f2;border-color:#fecdca}"
-    "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:7px;padding:9px;max-height:430px;overflow:auto;font-size:.82em}"
-    "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.chips3{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}.speed{font-size:1.9em}}"
+    ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:3px 0 0;line-height:1.4}"
+    ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f8fafc;border:1px solid #e8edf3;font-size:14px}.savebar.oktxt{background:#f0f9f4;border-color:#b7e4c7}.savebar.errtxt{background:#fff5f3;border-color:#f1b8ad}"
+    "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:6px;padding:9px;max-height:430px;overflow:auto;font-size:14px;font-weight:400}"
+    "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.chips3{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
     "</style>";
 
 static const char FAN_PAGE_TOP[] PROGMEM =
@@ -190,7 +190,7 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.auto_restore.value=d.auto_restore?1:0}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{setMsg('Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
-    "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),900)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
+    "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),500)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
     "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
     "</script>";
 

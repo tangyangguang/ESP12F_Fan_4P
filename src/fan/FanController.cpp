@@ -11,6 +11,8 @@
 #include "Esp8266BaseSleep.h"
 #include "Esp8266BaseWiFi.h"
 #else
+#include <stdlib.h>
+#include <string.h>
 #include <Arduino.h>
 #include "Esp8266BaseConfig.h"
 #include "Esp8266BaseLog.h"
@@ -29,11 +31,26 @@ const char* KEY_AUTO_RESTORE = "fan_auto_restore";
 const char* KEY_LAST_SPEED = "fan_last_speed";
 const char* KEY_LAST_TIMER = "fan_last_timer";
 const char* KEY_RUN_DURATION = "fan_run_duration";
-const char* KEY_IR_PROTO = "fan_ir_proto_";
-const char* KEY_IR_CODE = "fan_ir_code_";
+const char* KEY_IR_ENTRY = "fan_ir_key_";
 
 // Gear to speed mapping
 const uint8_t GEAR_SPEED[5] = {0, 25, 50, 75, 100};
+
+bool parseIRCodeEntry(const char* value, uint8_t* protocol, uint64_t* code) {
+    if (!value || !protocol || !code) return false;
+
+    char* end = nullptr;
+    unsigned long parsedProtocol = strtoul(value, &end, 10);
+    if (end == value || *end != ':' || parsedProtocol > 255) return false;
+
+    char* codeEnd = nullptr;
+    unsigned long long parsedCode = strtoull(end + 1, &codeEnd, 16);
+    if (codeEnd == end + 1 || *codeEnd != '\0') return false;
+
+    *protocol = static_cast<uint8_t>(parsedProtocol);
+    *code = static_cast<uint64_t>(parsedCode);
+    return true;
+}
 }
 
 FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& led, IRReceiverDriver& ir)
@@ -525,18 +542,17 @@ void FanController::_loadConfig() {
     _run_duration = static_cast<uint32_t>(
         Esp8266BaseConfig::getInt(KEY_RUN_DURATION, 0));
 
-    // Load IR codes
+    // Load IR codes. Each learned key is stored as one protocol:code value.
     char key[20];
     for (uint8_t i = 0; i < 6; i++) {
-        snprintf(key, sizeof(key), "%s%d", KEY_IR_PROTO, i);
-        int32_t proto = Esp8266BaseConfig::getInt(key, 0);
-        snprintf(key, sizeof(key), "%s%d", KEY_IR_CODE, i);
-        int32_t code_low = Esp8266BaseConfig::getInt(key, 0);
-        snprintf(key, sizeof(key), "%s%d_hi", KEY_IR_CODE, i);
-        int32_t code_high = Esp8266BaseConfig::getInt(key, 0);
-
-        uint64_t code = (static_cast<uint64_t>(code_high) << 32) | static_cast<uint32_t>(code_low);
-        _ir.setKeyCode(i, static_cast<uint8_t>(proto), code);
+        uint8_t proto = 0;
+        uint64_t code = 0;
+        char value[32];
+        snprintf(key, sizeof(key), "%s%d", KEY_IR_ENTRY, i);
+        if (Esp8266BaseConfig::getStr(key, value, sizeof(value), "") &&
+            parseIRCodeEntry(value, &proto, &code)) {
+            _ir.setKeyCode(i, proto, code);
+        }
     }
 }
 
@@ -556,13 +572,17 @@ void FanController::_saveIRCode(uint8_t key_index) {
     uint8_t proto;
     uint64_t code;
     _ir.getKeyCode(key_index, &proto, &code);
+    if (proto == 0 && code == 0) return;
 
-    snprintf(key, sizeof(key), "%s%d", KEY_IR_PROTO, key_index);
-    Esp8266BaseConfig::setInt(key, static_cast<int32_t>(proto));
-    snprintf(key, sizeof(key), "%s%d", KEY_IR_CODE, key_index);
-    Esp8266BaseConfig::setInt(key, static_cast<int32_t>(code & 0xFFFFFFFF));
-    snprintf(key, sizeof(key), "%s%d_hi", KEY_IR_CODE, key_index);
-    Esp8266BaseConfig::setInt(key, static_cast<int32_t>((code >> 32) & 0xFFFFFFFF));
+    char value[32];
+    char current[32];
+    snprintf(key, sizeof(key), "%s%d", KEY_IR_ENTRY, key_index);
+    snprintf(value, sizeof(value), "%u:%016llX", proto, static_cast<unsigned long long>(code));
+    if (Esp8266BaseConfig::getStr(key, current, sizeof(current), "") && strcmp(current, value) == 0) {
+        ESP8266BASE_LOG_I("FanCtrl", "IR learned code unchanged key=%u", key_index);
+        return;
+    }
+    Esp8266BaseConfig::setStr(key, value);
 }
 
 void FanController::_saveIRCodes() {

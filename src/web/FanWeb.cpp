@@ -60,15 +60,19 @@ static const char FAN_TIMER_INPUT_END[] PROGMEM =
     "<script>"
     "var rem=";
 static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
-    ";function e(i,v){var x=document.getElementById(i);if(x)x.textContent=v}"
+    ";var clkMs=0,clkOk=false;function e(i,v){var x=document.getElementById(i);if(x)x.textContent=v}"
+    "function pad(n){return(n<10?'0':'')+n}"
+    "function cp(s){var m=/(\\d+)-(\\d+)-(\\d+) (\\d+):(\\d+):(\\d+)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime():0}"
+    "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
-    "function draw(d){e('st',d.state);e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('ip',d.ip);e('rssi',d.rssi+' dBm');e('clk',d.clock);e('blk',d.blocked?'Yes':'No');document.getElementById('blk').className=d.blocked?'errtxt':'oktxt';rem=d.timer_remaining;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "function draw(d){e('st',d.state);e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('ip',d.ip);e('rssi',d.rssi+' dBm');e('clk',d.clock);e('blk',d.blocked?'Yes':'No');document.getElementById('blk').className=d.blocked?'errtxt':'oktxt';rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
     "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
     "function tm(v){v=parseInt(v||0);if(v>=0&&v<=5940){rem=v*60;e('tim',tf(rem));document.getElementById('tv').value=v;post('/api/timer','seconds='+rem)}}"
     "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');post('/api/stop','')}"
-    "setInterval(function(){if(rem>0){rem--;e('tim',tf(rem))}},1000);setInterval(poll,3000)"
+    "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;e('clk',cf(clkMs))}}"
+    "clkMs=cp(document.getElementById('clk').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);setInterval(poll,3000)"
     "</script>";
 
 void FanWeb::handleStatusPage() {

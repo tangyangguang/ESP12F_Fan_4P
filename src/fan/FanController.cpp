@@ -339,6 +339,7 @@ void FanController::_handleSleep() {
 void FanController::_handleError() {
     _processButtonEvents();
     _processIREvents();
+    _processTimer();
 
     // Check recovery progress
     if (_recovery_attempting) {

@@ -509,6 +509,27 @@ void test_controller_timer_countdown_while_idle() {
     TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
 }
 
+void test_controller_timer_countdown_while_error() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 2600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    ctrl.setTimer(3);
+    for (int i = 1; i <= 3; i++) {
+        g_mock_millis = 2600 + i * 1000;
+        ctrl.tick();
+    }
+
+    TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
+}
+
 void test_controller_power_on_restore() {
     Esp8266BaseConfig::setInt("fan_last_speed", 60);
     Esp8266BaseConfig::setInt("fan_last_timer", 1800);
@@ -848,6 +869,7 @@ int main() {
     RUN_TEST(test_controller_timer);
     RUN_TEST(test_controller_timer_countdown);
     RUN_TEST(test_controller_timer_countdown_while_idle);
+    RUN_TEST(test_controller_timer_countdown_while_error);
     RUN_TEST(test_controller_power_on_restore);
     RUN_TEST(test_controller_power_on_restore_disabled);
     RUN_TEST(test_controller_sleep_mode);

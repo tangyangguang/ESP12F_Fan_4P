@@ -54,6 +54,8 @@ public:
     uint8_t getLastProtocol() const;
     uint64_t getLastCode() const;
     uint32_t getLearnedSequence() const;
+    uint32_t getLearnRejectSequence() const;
+    uint8_t getDuplicateKeyIndex() const;
 
 #ifdef UNIT_TEST
     void testQueueEvent(IREvent event);
@@ -74,6 +76,8 @@ private:
     uint32_t _learning_start_tick;
     bool _learned_dirty;
     uint32_t _learned_sequence;
+    uint32_t _learn_reject_sequence;
+    uint8_t _duplicate_key_index;
     uint32_t _ignore_until_tick;
     static const uint32_t LEARNING_TIMEOUT_MS = 10000;
     static const uint32_t POST_LEARN_IGNORE_MS = 1200;

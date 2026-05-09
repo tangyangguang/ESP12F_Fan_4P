@@ -13,6 +13,8 @@ IRReceiverDriver::IRReceiverDriver(uint8_t recv_pin)
     , _learning_start_tick(0)
     , _learned_dirty(false)
     , _learned_sequence(0)
+    , _learn_reject_sequence(0)
+    , _duplicate_key_index(IR_KEY_COUNT)
     , _ignore_until_tick(0)
     , _last_protocol(0)
     , _last_code(0)
@@ -166,6 +168,14 @@ uint32_t IRReceiverDriver::getLearnedSequence() const {
     return _learned_sequence;
 }
 
+uint32_t IRReceiverDriver::getLearnRejectSequence() const {
+    return _learn_reject_sequence;
+}
+
+uint8_t IRReceiverDriver::getDuplicateKeyIndex() const {
+    return _duplicate_key_index;
+}
+
 bool IRReceiverDriver::findDuplicateKey(uint8_t protocol, uint64_t code, uint8_t except_key, uint8_t* duplicate_key) const {
     if (protocol == 0 && code == 0) return false;
     for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
@@ -183,12 +193,15 @@ bool IRReceiverDriver::completeLearning(uint8_t protocol, uint64_t code) {
 
     uint8_t duplicate_key = 0;
     if (findDuplicateKey(protocol, code, _learning_key_index, &duplicate_key)) {
+        _duplicate_key_index = duplicate_key;
+        _learn_reject_sequence++;
         ESP8266BASE_LOG_W("IR", "Rejected duplicate learned code key=%u duplicate_of=%u protocol=%u code=0x%08llX",
                           _learning_key_index, duplicate_key, protocol,
                           static_cast<unsigned long long>(code));
         return false;
     }
 
+    _duplicate_key_index = IR_KEY_COUNT;
     setKeyCode(_learning_key_index, protocol, code);
     _last_protocol = protocol;
     _last_code = code;

@@ -480,6 +480,8 @@ void test_ir_learning_rejects_duplicate_code_for_other_key() {
     TEST_ASSERT_FALSE(ir.testLearnDecoded(IR_KEY_TIMER_4H, 76, 0xD88));
     TEST_ASSERT_TRUE(ir.isLearning());
     TEST_ASSERT_EQUAL(0, ir.getLearnedSequence());
+    TEST_ASSERT_EQUAL(1, ir.getLearnRejectSequence());
+    TEST_ASSERT_EQUAL(IR_KEY_TIMER_2H, ir.getDuplicateKeyIndex());
 
     uint8_t proto; uint64_t code;
     TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_4H, &proto, &code));
@@ -489,6 +491,7 @@ void test_ir_learning_rejects_duplicate_code_for_other_key() {
     TEST_ASSERT_TRUE(ir.testLearnDecoded(IR_KEY_TIMER_2H, 76, 0xD88));
     TEST_ASSERT_FALSE(ir.isLearning());
     TEST_ASSERT_EQUAL(1, ir.getLearnedSequence());
+    TEST_ASSERT_EQUAL(IR_KEY_COUNT, ir.getDuplicateKeyIndex());
 }
 
 // ─── LedIndicator Tests ─────────────────────────────────────────────────────
@@ -1565,6 +1568,8 @@ void test_web_api_status_reports_business_metrics() {
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"sleep_wait\":45"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"auto_restore\":false"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":300"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"ir_reject_seq\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"ir_duplicate_key\":8"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"ir_last_code\":\"0x"));
 }
 
@@ -1777,6 +1782,7 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "confirm('Clear IR code for '+n+'?')"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Clear</button>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Already assigned to '+irName(d.ir_duplicate_key)"));
 }
 
 void test_status_page_contains_4h_and_8h_timer_presets() {
@@ -1821,6 +1827,7 @@ void test_web_api_ir_learn_accepts_8h_and_rejects_out_of_range() {
     TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
     TEST_ASSERT_TRUE(ir.isLearning());
     TEST_ASSERT_EQUAL(IR_KEY_TIMER_8H, ir.getLearnedKeyIndex());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"rej_seq\":0"));
 
     MockWebServer::setMethod(HTTP_POST);
     MockWebServer::setArg("key_index", "8");

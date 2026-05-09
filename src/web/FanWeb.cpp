@@ -277,14 +277,15 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
 static const char CONFIG_IR_END[] PROGMEM =
     "</div><div class=help>Press one, then point the remote within 10 seconds.</div><span id=irMsg class='savebar muted'>Ready</span></div>"
     "<script>"
+    "var irNames=['Speed Up','Speed Down','Stop','30 min','1 h','2 h','4 h','8 h'];function irName(i){return irNames[i]||('key '+i)}"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIrRow(i,t){var e=document.getElementById('irv'+i);if(e)e.textContent=t}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
     "function reloadCfg(f){fetch('/api/config').then(r=>r.json()).then(j=>{if(j.ok)applyCfg(j.data,f)})}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
-    "function watchIr(i,n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(i,n,seq),500)}else if(d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v);setIr('Learned '+n+' - '+v,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
-    "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(i,n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
+    "function watchIr(i,n,seq,rej){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v);setIr('Learned '+n+' - '+v,'oktxt')}else if(d.ir_reject_seq!=rej){rej=d.ir_reject_seq;setIr('Already assigned to '+irName(d.ir_duplicate_key)+'. Press a different key - '+d.ir_remaining+'s','errtxt');setTimeout(()=>watchIr(i,n,seq,rej),500)}else if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(i,n,seq,rej),500)}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
+    "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(i,n,d.seq,d.rej_seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
     "function clearIr(i,n){if(!confirm('Clear IR code for '+n+'?'))return;setIr('Clearing '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i+'&clear=1'}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{if(x.ok&&x.j.ok){setIrRow(i,'Not learned');setIr(x.j.changed?('Cleared '+n):('No code for '+n),x.j.changed?'oktxt':'muted')}else setIr('Clear failed','errtxt')}).catch(()=>setIr('Clear failed: network error','errtxt'))}"
     "</script>";
 
@@ -404,6 +405,7 @@ void FanWeb::handleApiStatus() {
         "\"block_detect\":%u,\"sleep_wait\":%u,\"auto_restore\":%s,\"led_flash_ms\":%u,"
         "\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
+        "\"ir_reject_seq\":%lu,\"ir_duplicate_key\":%u,"
         "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\"}}",
         stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
         _controller->getCurrentGear(),
@@ -422,6 +424,8 @@ void FanWeb::handleApiStatus() {
         _ir->isLearning() ? "true" : "false", ir_key,
         (unsigned long)_ir->getLearningRemaining(),
         (unsigned long)_ir->getLearnedSequence(),
+        (unsigned long)_ir->getLearnRejectSequence(),
+        _ir->getDuplicateKeyIndex(),
         _ir->getLastProtocol(),
         (unsigned long long)_ir->getLastCode()
     );
@@ -659,9 +663,10 @@ void FanWeb::handleApiIrLearn() {
         if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) &&
             _ir->startLearning(static_cast<uint8_t>(idx))) {
             ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));
-            char buf[96];
-            snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu}",
-                     (unsigned long)_ir->getLearnedSequence());
+            char buf[128];
+            snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu,\"rej_seq\":%lu}",
+                     (unsigned long)_ir->getLearnedSequence(),
+                     (unsigned long)_ir->getLearnRejectSequence());
             server.send(200, "application/json", buf);
             return;
         }

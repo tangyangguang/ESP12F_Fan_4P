@@ -323,12 +323,12 @@ private:
 
 | 方法 | 路径 | 功能 | 请求示例 | 返回示例 |
 |------|------|------|----------|----------|
-| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"running","gear":2,"speed":50,"timer_remaining":1800,"uptime":3600,"wifi_connected":true,"wifi_rssi":-65,"ip":"192.168.1.100","ntp_synced":true,"error_code":0}}` |
+| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"Running","speed":50,"target_speed":50,"timer_remaining":1800,"run_duration":3600,"blocked":false,"ip":"192.168.1.100","rssi":-65,"clock":"2026-05-09 12:00:00","ir_learning":false,"ir_key":0,"ir_remaining":0,"ir_learn_seq":1,"ir_last_protocol":1,"ir_last_code":"0x0000E01F"}}` |
 | POST | `/api/speed` | 设置风扇转速 | `speed=70` | `{"ok":true,"speed":70,"target_speed":70}` |
 | POST | `/api/timer` | 设置定时关机 | `seconds=3600` | `{"ok":true,"timer_remaining":3600}` |
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |
-| GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start_time":1000,"soft_stop_time":1000,"block_detect_time":1500,"sleep_wait_time":60,"auto_restore":true}}` |
-| POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true}` |
+| GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
+| POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true,"data":{"min_effective_speed":15,"soft_start":500,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
 | POST | `/api/ir/learn` | 开始红外学习 | `key_index=0` | `{"ok":true,"learning":true,"timeout":10}` |
 
 ---

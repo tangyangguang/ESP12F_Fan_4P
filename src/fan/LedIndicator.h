@@ -40,8 +40,8 @@ private:
     bool _flash_active;
     uint16_t _flash_duration_ms;
 
-    static const uint32_t SLOW_BLINK_INTERVAL = 1000;  // 1Hz
-    static const uint32_t FAST_BLINK_INTERVAL = 200;   // 5Hz
+    static const uint32_t SLOW_BLINK_INTERVAL = 500;   // 1Hz full cycle
+    static const uint32_t FAST_BLINK_INTERVAL = 100;   // 5Hz full cycle
     static const uint16_t DEFAULT_FLASH_DURATION = 200; // 200ms
 };
 

@@ -476,21 +476,21 @@ void test_led_indicator_slow_and_fast_blink_timing() {
     led.setOverride(LED_SLOW_BLINK);
     g_mock_millis = 0; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
-    g_mock_millis = 999; led.tick();
+    g_mock_millis = 499; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 500; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    g_mock_millis = 999; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
     g_mock_millis = 1000; led.tick();
-    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
-    g_mock_millis = 1999; led.tick();
-    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
-    g_mock_millis = 2000; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
 
     led.setOverride(LED_FAST_BLINK);
-    g_mock_millis = 2199; led.tick();
+    g_mock_millis = 1099; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
-    g_mock_millis = 2200; led.tick();
+    g_mock_millis = 1100; led.tick();
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
-    g_mock_millis = 2400; led.tick();
+    g_mock_millis = 1200; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
 }
 
@@ -524,7 +524,7 @@ void test_led_indicator_flash_restores_wifi_slow_blink() {
 
     g_mock_millis = 200; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
-    g_mock_millis = 1000; led.tick();
+    g_mock_millis = 500; led.tick();
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
 }
 
@@ -567,13 +567,13 @@ void test_led_indicator_flash_does_not_override_fast_blink() {
     led.begin();
 
     led.setOverride(LED_FAST_BLINK);
-    g_mock_millis = 200; led.tick();
+    g_mock_millis = 100; led.tick();
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
 
     led.flashOnce();
-    g_mock_millis = 399; led.tick();
+    g_mock_millis = 199; led.tick();
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
-    g_mock_millis = 400; led.tick();
+    g_mock_millis = 200; led.tick();
     TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
 }
 
@@ -610,6 +610,33 @@ void test_controller_min_effective_speed() {
     ctrl.setSpeed(5);
     g_mock_millis = 2000; ctrl.tick();
     TEST_ASSERT_EQUAL(15, ctrl.getCurrentSpeed());
+}
+
+void test_controller_min_effective_speed_applies_to_soft_start_floor() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(60000);
+    ctrl.setMinEffectiveSpeed(30);
+
+    ctrl.setSpeed(30);
+    g_mock_millis = 1; ctrl.tick();
+    TEST_ASSERT_EQUAL(30, ctrl.getCurrentSpeed());
+}
+
+void test_controller_set_speed_clamps_public_input_to_100() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(250);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(100, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(100, ctrl.getCurrentSpeed());
 }
 
 void test_controller_stop() {
@@ -674,6 +701,34 @@ void test_controller_timer_countdown() {
         ctrl.tick();
     }
     TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
+}
+
+void test_controller_timer_catches_up_after_late_tick() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ctrl.setTimer(10);
+    g_mock_millis = 3000;
+    ctrl.tick();
+
+    TEST_ASSERT_EQUAL(7, ctrl.getTimerRemaining());
+}
+
+void test_controller_run_duration_catches_up_after_late_tick() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 3500;
+    ctrl.tick();
+
+    TEST_ASSERT_EQUAL(3, ctrl.getTotalRunDuration());
 }
 
 void test_controller_timer_countdown_while_idle() {
@@ -877,6 +932,31 @@ void test_controller_wake_from_sleep() {
     ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
     TEST_ASSERT_FALSE(ctrl.isSleeping());
+}
+
+void test_controller_button_wake_from_sleep_keeps_running_state() {
+    g_pin_state[14] = HIGH; g_pin_state[4] = HIGH;
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setSleepWaitTime(5);
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+    fan.setSoftStopTime(0);
+
+    ctrl.setSpeed(0);
+    g_mock_millis = 6000; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_SLEEP, ctrl.getState());
+
+    g_mock_millis = 6100; g_pin_state[14] = LOW; ctrl.tick();
+    g_mock_millis = 6160; ctrl.tick();
+    g_mock_millis = 6300; g_pin_state[14] = HIGH; ctrl.tick();
+    g_mock_millis = 6360; ctrl.tick();
+
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    TEST_ASSERT_FALSE(ctrl.isSleeping());
+    TEST_ASSERT_EQUAL(25, ctrl.getTargetSpeed());
 }
 
 void test_controller_run_duration() {
@@ -1285,6 +1365,23 @@ void test_web_api_config_rejects_invalid_values() {
     TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
 }
 
+void test_web_api_config_rejects_without_partial_apply() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("min_speed", "15");
+    MockWebServer::setArg("soft_start", "99999");
+    FanWeb::handleApiConfig();
+
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+    TEST_ASSERT_EQUAL(10, ctrl.getMinEffectiveSpeed());
+    TEST_ASSERT_EQUAL(10, Esp8266BaseConfig::getInt("fan_min_speed", 10));
+}
+
 void test_web_api_config_save_flashes_once() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1421,10 +1518,14 @@ int main() {
     RUN_TEST(test_controller_begin);
     RUN_TEST(test_controller_set_speed);
     RUN_TEST(test_controller_min_effective_speed);
+    RUN_TEST(test_controller_min_effective_speed_applies_to_soft_start_floor);
+    RUN_TEST(test_controller_set_speed_clamps_public_input_to_100);
     RUN_TEST(test_controller_stop);
     RUN_TEST(test_controller_stop_clears_error_state);
     RUN_TEST(test_controller_timer);
     RUN_TEST(test_controller_timer_countdown);
+    RUN_TEST(test_controller_timer_catches_up_after_late_tick);
+    RUN_TEST(test_controller_run_duration_catches_up_after_late_tick);
     RUN_TEST(test_controller_timer_countdown_while_idle);
     RUN_TEST(test_controller_timer_countdown_while_error);
     RUN_TEST(test_controller_power_on_restore);
@@ -1437,6 +1538,7 @@ int main() {
     RUN_TEST(test_controller_runtime_state_saved_for_timer_and_stop);
     RUN_TEST(test_controller_sleep_mode);
     RUN_TEST(test_controller_wake_from_sleep);
+    RUN_TEST(test_controller_button_wake_from_sleep_keeps_running_state);
     RUN_TEST(test_controller_run_duration);
     RUN_TEST(test_controller_config_persistence);
     RUN_TEST(test_controller_ir_persistence);
@@ -1461,6 +1563,7 @@ int main() {
     RUN_TEST(test_web_api_stop);
     RUN_TEST(test_web_api_config_get);
     RUN_TEST(test_web_api_config_rejects_invalid_values);
+    RUN_TEST(test_web_api_config_rejects_without_partial_apply);
     RUN_TEST(test_web_api_config_save_flashes_once);
     RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
     RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);

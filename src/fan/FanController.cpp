@@ -186,6 +186,7 @@ bool FanController::setSpeed(uint8_t speed) {
     _is_sleeping = false;
     Esp8266BaseSleep::wakeModem();
 
+    if (speed > 100) speed = 100;
     if (speed > 0 && speed < _min_effective_speed) {
         speed = _min_effective_speed;
     }
@@ -265,6 +266,7 @@ uint8_t FanController::getMinEffectiveSpeed() const { return _min_effective_spee
 void FanController::setMinEffectiveSpeed(uint8_t speed) {
     if (speed > 50) speed = 50;
     _min_effective_speed = speed;
+    _fan.setMinEffectiveSpeed(_min_effective_speed);
     Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
 }
 
@@ -336,9 +338,13 @@ void FanController::_handleRunning() {
     _processTimer();
 
     uint32_t now = millis();
-    if (now - _last_run_tick >= 1000) {
+    bool duration_changed = false;
+    while (now - _last_run_tick >= 1000) {
         _run_duration++;
-        _last_run_tick = now;
+        _last_run_tick += 1000;
+        duration_changed = true;
+    }
+    if (duration_changed) {
         _saveRuntimeState();
     }
 
@@ -362,7 +368,9 @@ void FanController::_handleSleep() {
     if (millis() - _last_operation_tick < 1000) {
         _is_sleeping = false;
         Esp8266BaseSleep::wakeModem();
-        _state = SYS_IDLE;
+        if (_state == SYS_SLEEP) {
+            _state = SYS_IDLE;
+        }
         ESP8266BASE_LOG_I("FanCtrl", "Woken from sleep, transitioning to IDLE");
     }
 }
@@ -478,19 +486,23 @@ void FanController::_processTimer() {
     if (_timer_remaining == 0) return;
 
     uint32_t now = millis();
+    bool timer_changed = false;
 
-    if (now - _last_timer_tick >= 1000) {
+    while (_timer_remaining > 0 && now - _last_timer_tick >= 1000) {
         _timer_remaining--;
-        _last_timer_tick = now;
-
-        if (_timer_remaining == 0) {
-            stop();
-            ESP8266BASE_LOG_I("FanCtrl", "Timer expired, fan stopped");
-        } else if (_timer_remaining <= 60 && _timer_remaining % 10 == 0) {
-            ESP8266BASE_LOG_D("FanCtrl", "Timer remaining: %lus", static_cast<unsigned long>(_timer_remaining));
-        }
-        _saveRuntimeState();
+        _last_timer_tick += 1000;
+        timer_changed = true;
     }
+
+    if (!timer_changed) return;
+
+    if (_timer_remaining == 0) {
+        stop();
+        ESP8266BASE_LOG_I("FanCtrl", "Timer expired, fan stopped");
+    } else if (_timer_remaining <= 60 && _timer_remaining % 10 == 0) {
+        ESP8266BASE_LOG_D("FanCtrl", "Timer remaining: %lus", static_cast<unsigned long>(_timer_remaining));
+    }
+    _saveRuntimeState();
 }
 
 void FanController::_processSleep() {
@@ -598,6 +610,7 @@ void FanController::_loadConfig() {
     _soft_start_time = static_cast<uint16_t>(soft_start);
     _soft_stop_time = static_cast<uint16_t>(soft_stop);
     _block_detect_time = static_cast<uint16_t>(block_detect);
+    _fan.setMinEffectiveSpeed(_min_effective_speed);
     _fan.setSoftStartTime(_soft_start_time);
     _fan.setSoftStopTime(_soft_stop_time);
     _fan.setBlockDetectTime(_block_detect_time);

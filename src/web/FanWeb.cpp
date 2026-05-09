@@ -375,19 +375,29 @@ void FanWeb::handleApiConfig() {
     if (server.method() == HTTP_POST) {
         ESP8266BASE_LOG_I("FanWeb", "user_action save_config");
         uint8_t changed = 0;
-        // Parse args
+        bool has_min_speed = false;
+        bool has_soft_start = false;
+        bool has_soft_stop = false;
+        bool has_block_detect = false;
+        bool has_sleep_wait = false;
+        bool has_led_flash_ms = false;
+        bool has_auto_restore = false;
+        uint8_t min_speed = _controller->getMinEffectiveSpeed();
+        uint16_t soft_start = _controller->getSoftStartTime();
+        uint16_t soft_stop = _controller->getSoftStopTime();
+        uint16_t block_detect = _controller->getBlockDetectTime();
+        uint16_t sleep_wait = _controller->getSleepWaitTime();
+        uint16_t led_flash_ms = _controller->getLedFlashDuration();
+        bool auto_restore = _controller->getAutoRestore();
+
         if (server.hasArg("min_speed")) {
             uint32_t parsed = 0;
             if (!parseUintArg(server.arg("min_speed"), 0, 50, &parsed)) {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid min_speed\"}");
                 return;
             }
-            uint8_t v = static_cast<uint8_t>(parsed);
-            uint8_t old = _controller->getMinEffectiveSpeed();
-            if (v != old) {
-                _controller->setMinEffectiveSpeed(v);
-                changed++;
-            }
+            min_speed = static_cast<uint8_t>(parsed);
+            has_min_speed = true;
         }
         if (server.hasArg("soft_start")) {
             uint32_t parsed = 0;
@@ -395,12 +405,8 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid soft_start\"}");
                 return;
             }
-            uint16_t v = static_cast<uint16_t>(parsed);
-            uint16_t old = _controller->getSoftStartTime();
-            if (v != old) {
-                _controller->setSoftStartTime(v);
-                changed++;
-            }
+            soft_start = static_cast<uint16_t>(parsed);
+            has_soft_start = true;
         }
         if (server.hasArg("soft_stop")) {
             uint32_t parsed = 0;
@@ -408,12 +414,8 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid soft_stop\"}");
                 return;
             }
-            uint16_t v = static_cast<uint16_t>(parsed);
-            uint16_t old = _controller->getSoftStopTime();
-            if (v != old) {
-                _controller->setSoftStopTime(v);
-                changed++;
-            }
+            soft_stop = static_cast<uint16_t>(parsed);
+            has_soft_stop = true;
         }
         if (server.hasArg("block_detect")) {
             uint32_t parsed = 0;
@@ -421,12 +423,8 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid block_detect\"}");
                 return;
             }
-            uint16_t v = static_cast<uint16_t>(parsed);
-            uint16_t old = _controller->getBlockDetectTime();
-            if (v != old) {
-                _controller->setBlockDetectTime(v);
-                changed++;
-            }
+            block_detect = static_cast<uint16_t>(parsed);
+            has_block_detect = true;
         }
         if (server.hasArg("sleep_wait")) {
             uint32_t parsed = 0;
@@ -434,12 +432,8 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid sleep_wait\"}");
                 return;
             }
-            uint16_t v = static_cast<uint16_t>(parsed);
-            uint16_t old = _controller->getSleepWaitTime();
-            if (v != old) {
-                _controller->setSleepWaitTime(v);
-                changed++;
-            }
+            sleep_wait = static_cast<uint16_t>(parsed);
+            has_sleep_wait = true;
         }
         if (server.hasArg("led_flash_ms")) {
             uint32_t parsed = 0;
@@ -447,12 +441,8 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid led_flash_ms\"}");
                 return;
             }
-            uint16_t v = static_cast<uint16_t>(parsed);
-            uint16_t old = _controller->getLedFlashDuration();
-            if (v != old) {
-                _controller->setLedFlashDuration(v);
-                changed++;
-            }
+            led_flash_ms = static_cast<uint16_t>(parsed);
+            has_led_flash_ms = true;
         }
         if (server.hasArg("auto_restore")) {
             uint32_t parsed = 0;
@@ -460,13 +450,39 @@ void FanWeb::handleApiConfig() {
                 server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid auto_restore\"}");
                 return;
             }
-            bool v = parsed != 0;
-            bool old = _controller->getAutoRestore();
-            if (v != old) {
-                _controller->setAutoRestore(v);
-                changed++;
-            }
+            auto_restore = parsed != 0;
+            has_auto_restore = true;
         }
+
+        if (has_min_speed && min_speed != _controller->getMinEffectiveSpeed()) {
+            _controller->setMinEffectiveSpeed(min_speed);
+            changed++;
+        }
+        if (has_soft_start && soft_start != _controller->getSoftStartTime()) {
+            _controller->setSoftStartTime(soft_start);
+            changed++;
+        }
+        if (has_soft_stop && soft_stop != _controller->getSoftStopTime()) {
+            _controller->setSoftStopTime(soft_stop);
+            changed++;
+        }
+        if (has_block_detect && block_detect != _controller->getBlockDetectTime()) {
+            _controller->setBlockDetectTime(block_detect);
+            changed++;
+        }
+        if (has_sleep_wait && sleep_wait != _controller->getSleepWaitTime()) {
+            _controller->setSleepWaitTime(sleep_wait);
+            changed++;
+        }
+        if (has_led_flash_ms && led_flash_ms != _controller->getLedFlashDuration()) {
+            _controller->setLedFlashDuration(led_flash_ms);
+            changed++;
+        }
+        if (has_auto_restore && auto_restore != _controller->getAutoRestore()) {
+            _controller->setAutoRestore(auto_restore);
+            changed++;
+        }
+
         bool flushed = Esp8266BaseConfig::flush();
         if (flushed) {
             _controller->notifyUserAction();

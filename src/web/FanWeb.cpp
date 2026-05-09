@@ -61,9 +61,13 @@ static const char APP_STYLE[] PROGMEM =
 static const char FAN_PAGE_TOP[] PROGMEM =
     "<div class=top><div><h2>Fan</h2><div class=muted>Fast presets, exact input</div></div><div><div class=speed><span id=outTop>";
 static const char FAN_SPEED_END[] PROGMEM =
-    "</span><span class=unit>%</span></div><div class=targetline>Target <span id=tgtTop>";
-static const char FAN_TARGET_END[] PROGMEM =
-    "</span>%</div></div></div><div class='panel tight'><div class=stats>";
+    "</span><span class=unit>%</span></div><div class=targetline><span id=rpmTop>";
+static const char FAN_RPM_END[] PROGMEM =
+    "</span><span id=targetTopWrap";
+static const char FAN_TARGET_START[] PROGMEM =
+    "> &middot; Target <span id=tgtTop>";
+static const char FAN_TARGET_WRAP_END[] PROGMEM =
+    "</span>%</span></div></div></div><div class='panel tight'><div class=stats>";
 static const char FAN_STATUS_MID[] PROGMEM =
     "</div></div><div class=panel><h3>Speed</h3><div class=chips>"
     "<button onclick='spd(0)'>Off</button><button onclick='spd(25)'>25</button><button onclick='spd(50)'>50</button><button onclick='spd(75)'>75</button><button onclick='spd(100)'>100</button>"
@@ -86,12 +90,13 @@ static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
     "function cd(s){return(s&&s!='N/A')?s.split(' ')[0]:'N/A'}function ct(s){return(s&&s!='N/A')?s.split(' ')[1]:'N/A'}"
-    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "function tt(o,t){var w=document.getElementById('targetTopWrap');if(w)w.style.display=o==t?'none':''}"
+    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
-    "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
+    "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);tt(parseInt(document.getElementById('outTop').textContent||0),v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
     "function tm(v){v=parseInt(v||0);if(v>=0&&v<=5940){rem=v*60;e('tim',tf(rem));document.getElementById('tv').value=v;post('/api/timer','seconds='+rem)}}"
-    "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');e('outTop','0');post('/api/stop','')}"
+    "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');e('outTop','0');tt(0,0);post('/api/stop','')}"
     "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;var c=cf(clkMs);e('date',cd(c));e('time',ct(c))}}"
     "clkMs=cp(document.getElementById('date').textContent+' '+document.getElementById('time').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);setInterval(poll,3000)"
     "</script>";
@@ -109,9 +114,16 @@ void FanWeb::handleStatusPage() {
     snprintf(buf, sizeof(buf), "%d", _controller->getCurrentSpeed());
     Esp8266BaseWeb::sendChunk(buf);
     Esp8266BaseWeb::sendContent_P(FAN_SPEED_END);
+    snprintf(buf, sizeof(buf), "%u rpm", _controller->getCurrentRpm());
+    Esp8266BaseWeb::sendChunk(buf);
+    Esp8266BaseWeb::sendContent_P(FAN_RPM_END);
+    if (_controller->getCurrentSpeed() == _controller->getTargetSpeed()) {
+        Esp8266BaseWeb::sendChunk(" style='display:none'");
+    }
+    Esp8266BaseWeb::sendContent_P(FAN_TARGET_START);
     snprintf(buf, sizeof(buf), "%d", _controller->getTargetSpeed());
     Esp8266BaseWeb::sendChunk(buf);
-    Esp8266BaseWeb::sendContent_P(FAN_TARGET_END);
+    Esp8266BaseWeb::sendContent_P(FAN_TARGET_WRAP_END);
     
     // State
     const bool blocked = _controller->isBlocked();

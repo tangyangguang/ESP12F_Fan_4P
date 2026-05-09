@@ -1430,6 +1430,23 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Clock</span>"));
 }
 
+void test_web_status_page_topline_shows_output_and_target() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(75);
+    g_mock_millis = 100; ctrl.tick();
+
+    FanWeb::handleStatusPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span id=outTop>75"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Target <span id=tgtTop>75"));
+}
+
 void test_web_api_status_reports_business_metrics() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1760,6 +1777,7 @@ int main() {
     RUN_TEST(test_web_api_speed_set);
     RUN_TEST(test_web_api_speed_get_reports_target_when_blocked);
     RUN_TEST(test_web_status_page_merges_blocked_and_shows_business_metrics);
+    RUN_TEST(test_web_status_page_topline_shows_output_and_target);
     RUN_TEST(test_web_api_status_reports_business_metrics);
     RUN_TEST(test_web_api_timer);
     RUN_TEST(test_web_api_stop);

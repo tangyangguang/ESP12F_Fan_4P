@@ -53,6 +53,7 @@ IREvent IRReceiverDriver::getEvent() {
         if (_learning && (millis() - _learning_start_tick >= LEARNING_TIMEOUT_MS)) {
             ESP8266BASE_LOG_W("IR", "Learning timeout (key=%d)", _learning_key_index);
             _learning = false;
+            _duplicate_key_index = IR_KEY_COUNT;
         }
         return IR_EVENT_NONE;
     }
@@ -196,7 +197,6 @@ bool IRReceiverDriver::completeLearning(uint8_t protocol, uint64_t code) {
     if (findDuplicateKey(protocol, code, _learning_key_index, &duplicate_key)) {
         _duplicate_key_index = duplicate_key;
         _learn_reject_sequence++;
-        _learning_start_tick = millis();
         ESP8266BASE_LOG_W("IR", "Rejected duplicate learned code key=%u duplicate_of=%u protocol=%u code=0x%08llX",
                           _learning_key_index, duplicate_key, protocol,
                           static_cast<unsigned long long>(code));

@@ -485,6 +485,17 @@ void test_ir_learning_rejects_duplicate_code_for_other_key() {
     TEST_ASSERT_EQUAL(IR_KEY_TIMER_2H, ir.getDuplicateKeyIndex());
     TEST_ASSERT_EQUAL(10, ir.getLearningRemaining());
 
+    g_mock_millis = 1500;
+    TEST_ASSERT_EQUAL(9, ir.getLearningRemaining());
+
+    g_mock_millis = 10999;
+    TEST_ASSERT_EQUAL(0, ir.getLearningRemaining());
+    TEST_ASSERT_TRUE(ir.isLearning());
+    g_mock_millis = 11000;
+    ir.getEvent();
+    TEST_ASSERT_FALSE(ir.isLearning());
+    TEST_ASSERT_EQUAL(IR_KEY_COUNT, ir.getDuplicateKeyIndex());
+
     TEST_ASSERT_TRUE(ir.startLearning(IR_KEY_TIMER_4H));
     TEST_ASSERT_EQUAL(IR_KEY_COUNT, ir.getDuplicateKeyIndex());
 

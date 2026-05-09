@@ -477,17 +477,23 @@ void test_ir_learning_rejects_duplicate_code_for_other_key() {
     ir.begin();
     ir.setKeyCode(IR_KEY_TIMER_2H, 76, 0xD88);
 
+    g_mock_millis = 1000;
     TEST_ASSERT_FALSE(ir.testLearnDecoded(IR_KEY_TIMER_4H, 76, 0xD88));
     TEST_ASSERT_TRUE(ir.isLearning());
     TEST_ASSERT_EQUAL(0, ir.getLearnedSequence());
     TEST_ASSERT_EQUAL(1, ir.getLearnRejectSequence());
     TEST_ASSERT_EQUAL(IR_KEY_TIMER_2H, ir.getDuplicateKeyIndex());
+    TEST_ASSERT_EQUAL(10, ir.getLearningRemaining());
+
+    TEST_ASSERT_TRUE(ir.startLearning(IR_KEY_TIMER_4H));
+    TEST_ASSERT_EQUAL(IR_KEY_COUNT, ir.getDuplicateKeyIndex());
 
     uint8_t proto; uint64_t code;
     TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_4H, &proto, &code));
     TEST_ASSERT_EQUAL(0, proto);
     TEST_ASSERT_EQUAL(0, code);
 
+    ir.setKeyCode(IR_KEY_TIMER_4H, 0, 0);
     TEST_ASSERT_TRUE(ir.testLearnDecoded(IR_KEY_TIMER_2H, 76, 0xD88));
     TEST_ASSERT_FALSE(ir.isLearning());
     TEST_ASSERT_EQUAL(1, ir.getLearnedSequence());

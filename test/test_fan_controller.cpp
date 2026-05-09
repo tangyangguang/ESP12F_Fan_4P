@@ -1774,6 +1774,7 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(7,\"8 h\")"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</b>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "clearIr(7,\"8 h\")"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "confirm('Clear IR code for '+n+'?')"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Clear</button>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v)"));
 }

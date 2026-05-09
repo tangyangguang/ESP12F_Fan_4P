@@ -83,14 +83,15 @@ static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     "function cp(s){var m=/(\\d+)-(\\d+)-(\\d+) (\\d+):(\\d+):(\\d+)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime():0}"
     "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
-    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('clk',d.clock);rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "function cd(s){return(s&&s!='N/A')?s.split(' ')[0]:'N/A'}function ct(s){return(s&&s!='N/A')?s.split(' ')[1]:'N/A'}"
+    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
     "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
     "function tm(v){v=parseInt(v||0);if(v>=0&&v<=5940){rem=v*60;e('tim',tf(rem));document.getElementById('tv').value=v;post('/api/timer','seconds='+rem)}}"
     "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');post('/api/stop','')}"
-    "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;e('clk',cf(clkMs))}}"
-    "clkMs=cp(document.getElementById('clk').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);setInterval(poll,3000)"
+    "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;var c=cf(clkMs);e('date',cd(c));e('time',ct(c))}}"
+    "clkMs=cp(document.getElementById('date').textContent+' '+document.getElementById('time').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);setInterval(poll,3000)"
     "</script>";
 
 void FanWeb::handleStatusPage() {
@@ -188,8 +189,22 @@ void FanWeb::handleStatusPage() {
     } else {
         strcpy(buf, "N/A");
     }
-    Esp8266BaseWeb::sendChunk("<div class=stat><span>Clock</span><b id=clk>");
-    Esp8266BaseWeb::sendChunk(buf);
+    char date[11];
+    char time[9];
+    if (strcmp(buf, "N/A") == 0) {
+        strcpy(date, "N/A");
+        strcpy(time, "N/A");
+    } else {
+        memcpy(date, buf, 10);
+        date[10] = '\0';
+        memcpy(time, buf + 11, 8);
+        time[8] = '\0';
+    }
+    Esp8266BaseWeb::sendChunk("<div class=stat><span>Date</span><b id=date>");
+    Esp8266BaseWeb::sendChunk(date);
+    Esp8266BaseWeb::sendChunk("</b></div>");
+    Esp8266BaseWeb::sendChunk("<div class=stat><span>Time</span><b id=time>");
+    Esp8266BaseWeb::sendChunk(time);
     Esp8266BaseWeb::sendChunk("</b></div>");
 
     Esp8266BaseWeb::sendContent_P(FAN_STATUS_MID);

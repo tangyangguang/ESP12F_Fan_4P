@@ -1425,6 +1425,9 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Sleep wait</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Restore</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>LED flash</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Date</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Time</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Clock</span>"));
 }
 
 void test_web_api_status_reports_business_metrics() {

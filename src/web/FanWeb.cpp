@@ -45,17 +45,17 @@ static const char APP_STYLE[] PROGMEM =
     ".panel{border:1px solid #d7dee8;border-radius:6px;padding:10px;margin:8px 0;background:#fff}.tight{margin-top:6px}"
     ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px}.stat{background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px;min-width:0}.stat.state{grid-column:1/-1}"
     ".stat span{display:block;color:#6b7280;font-size:14px}.stat b{display:block;font-size:14px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111827}"
-    ".chips{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.chips3{grid-template-columns:repeat(3,1fr)}"
+    ".chips{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}"
     "button,.btn{background:#2563a6;color:#fff;border:0;border-radius:6px;padding:8px 7px;cursor:pointer;text-align:center;text-decoration:none;font-size:14px;font-weight:400;min-height:36px;box-sizing:border-box}"
     "button.secondary,.btn.secondary{background:#6b7280}button.danger{background:#b64a2f}.row{display:grid;grid-template-columns:1fr 76px;gap:7px;align-items:center;margin-top:4px}"
-    ".actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.actions button{min-height:40px}"
+    ".actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:14px}.actions button{min-height:40px}"
     ".formgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{min-width:0}label{display:block;font-size:14px;font-weight:400;color:#374151;margin:0 0 3px}"
     "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:14px;font-weight:400;margin:0;color:#111827}"
     ".row input:not([type=submit]){height:42px;min-height:42px;margin:0!important;padding:0 10px;display:block}.row button{height:42px;min-height:42px;padding:0 7px;align-self:center}"
-    ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:3px 0 0;line-height:1.4}"
+    ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:7px 0 0;line-height:1.4}"
     ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f8fafc;border:1px solid #e8edf3;font-size:14px}.savebar.oktxt{background:#f0f9f4;border-color:#b7e4c7}.savebar.errtxt{background:#fff5f3;border-color:#f1b8ad}"
     "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:6px;padding:9px;max-height:430px;overflow:auto;font-size:14px;font-weight:400}"
-    "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.chips3{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
+    "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
     "</style>";
 
 static const char FAN_PAGE_TOP[] PROGMEM =
@@ -68,8 +68,8 @@ static const char FAN_STATUS_MID[] PROGMEM =
     "</div><label>Custom (%)</label><div class=row><input id=sv type=number min=0 max=100 value='";
 static const char FAN_SPEED_INPUT_END[] PROGMEM =
     "'><button onclick='spd(document.getElementById(\"sv\").value)'>Apply</button></div></div>"
-    "<div class=panel><h3>Timer</h3><div class='chips chips3'>"
-    "<button onclick='tm(30)'>30 min</button><button onclick='tm(60)'>1 h</button><button onclick='tm(120)'>2 h</button>"
+    "<div class=panel><h3>Timer</h3><div class=chips>"
+    "<button onclick='tm(30)'>30 min</button><button onclick='tm(60)'>1 h</button><button onclick='tm(120)'>2 h</button><button onclick='tm(240)'>4 h</button><button onclick='tm(480)'>8 h</button>"
     "</div><label>Custom (min)</label><div class=row><input id=tv type=number min=0 max=5940 value='";
 static const char FAN_TIMER_INPUT_END[] PROGMEM =
     "'><button onclick='tm(document.getElementById(\"tv\").value)'>Set</button></div>"

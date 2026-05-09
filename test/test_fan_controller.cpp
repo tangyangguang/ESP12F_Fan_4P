@@ -1644,6 +1644,20 @@ void test_config_page_contains_led_flash_field() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "0 disables action feedback flash."));
 }
 
+void test_status_page_contains_4h_and_8h_timer_presets() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    FanWeb::handleStatusPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "tm(240)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">4 h</button>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "tm(480)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</button>"));
+}
+
 void test_web_api_ir_learn() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1757,6 +1771,7 @@ int main() {
     RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
     RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);
     RUN_TEST(test_config_page_contains_led_flash_field);
+    RUN_TEST(test_status_page_contains_4h_and_8h_timer_presets);
     RUN_TEST(test_web_api_ir_learn);
 
     return UNITY_END();

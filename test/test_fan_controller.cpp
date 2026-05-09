@@ -1799,7 +1799,10 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "confirm('Clear IR code for '+n+'?')"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Clear</button>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v)"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Already assigned to '+irName(d.ir_duplicate_key)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "irDeadline=Date.now()+d.timeout*1000"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function irLeft()"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "showLearn(n)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Already assigned to '+irName(irDup)"));
 }
 
 void test_status_page_contains_4h_and_8h_timer_presets() {

@@ -43,7 +43,7 @@ static const char APP_STYLE[] PROGMEM =
     ".top{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:8px}.muted{color:#6b7280;font-size:14px}"
     ".speed{font-size:38px;font-weight:600;line-height:1;text-align:right;color:#111827}.unit{font-size:16px;font-weight:400;color:#6b7280}"
     ".panel{border:1px solid #d7dee8;border-radius:6px;padding:10px;margin:8px 0;background:#fff}.tight{margin-top:6px}"
-    ".stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}.stat{background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px;min-width:0}"
+    ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px}.stat{background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px;min-width:0}.stat.state{grid-column:1/-1}"
     ".stat span{display:block;color:#6b7280;font-size:14px}.stat b{display:block;font-size:14px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111827}"
     ".chips{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.chips3{grid-template-columns:repeat(3,1fr)}"
     "button,.btn{background:#2563a6;color:#fff;border:0;border-radius:6px;padding:8px 7px;cursor:pointer;text-align:center;text-decoration:none;font-size:14px;font-weight:400;min-height:36px;box-sizing:border-box}"
@@ -83,7 +83,7 @@ static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     "function cp(s){var m=/(\\d+)-(\\d+)-(\\d+) (\\d+):(\\d+):(\\d+)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime():0}"
     "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
-    "function draw(d){e('st',d.state);e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('ip',d.ip);e('rssi',d.rssi+' dBm');e('clk',d.clock);e('blk',d.blocked?'Yes':'No');document.getElementById('blk').className=d.blocked?'errtxt':'oktxt';rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('clk',d.clock);rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
     "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
@@ -101,28 +101,40 @@ void FanWeb::handleStatusPage() {
     Esp8266BaseWeb::sendContent_P(APP_STYLE);
     Esp8266BaseWeb::sendContent_P(FAN_PAGE_TOP);
 
-    char buf[96];
+    char buf[160];
 
     snprintf(buf, sizeof(buf), "%d", _controller->getTargetSpeed());
     Esp8266BaseWeb::sendChunk(buf);
     Esp8266BaseWeb::sendContent_P(FAN_SPEED_END);
     
     // State
-    Esp8266BaseWeb::sendChunk("<div class=stat><span>State</span><b id=st>");
+    const bool blocked = _controller->isBlocked();
+    const char* stateText = "Unknown";
     switch (_controller->getState()) {
-        case SYS_IDLE: Esp8266BaseWeb::sendChunk("Idle"); break;
-        case SYS_RUNNING: Esp8266BaseWeb::sendChunk("Running"); break;
-        case SYS_SLEEP: Esp8266BaseWeb::sendChunk("Sleep"); break;
-        case SYS_ERROR: Esp8266BaseWeb::sendChunk("Error"); break;
-        default: Esp8266BaseWeb::sendChunk("Unknown"); break;
+        case SYS_IDLE: stateText = "Idle"; break;
+        case SYS_RUNNING: stateText = "Running"; break;
+        case SYS_SLEEP: stateText = "Sleep"; break;
+        case SYS_ERROR: stateText = blocked ? "Error / Blocked" : "Error"; break;
+        default: break;
     }
-    Esp8266BaseWeb::sendChunk("</b></div>");
+    if (blocked && _controller->getState() != SYS_ERROR) {
+        stateText = "Blocked";
+    }
+    snprintf(buf, sizeof(buf), "<div class='stat state'><span>State</span><b id=st class=%s>%s</b></div>",
+             blocked ? "errtxt" : "", stateText);
+    Esp8266BaseWeb::sendChunk(buf);
     
     // Speed
     snprintf(buf, sizeof(buf), "<div class=stat><span>Target</span><b id=tgt>%d%%</b></div>", _controller->getTargetSpeed());
     Esp8266BaseWeb::sendChunk(buf);
 
     snprintf(buf, sizeof(buf), "<div class=stat><span>Output</span><b id=out>%d%%</b></div>", _controller->getCurrentSpeed());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Gear</span><b id=gear>%u</b></div>", _controller->getCurrentGear());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>RPM</span><b id=rpm>%u rpm</b></div>", _controller->getCurrentRpm());
     Esp8266BaseWeb::sendChunk(buf);
 
     // Timer
@@ -142,16 +154,31 @@ void FanWeb::handleStatusPage() {
              (unsigned long)(_controller->getTotalRunDuration() / 3600));
     Esp8266BaseWeb::sendChunk(buf);
 
-    // WiFi
-    const char* ip = "Disconnected";
-    long rssi = 0;
-    if (Esp8266BaseWiFi::isConnected()) {
-        ip = Esp8266BaseWiFi::ip();
-        rssi = (long)WiFi.RSSI();
-    }
-    Esp8266BaseWeb::sendChunk("<div class=stat><span>IP</span><b id=ip>");
-    Esp8266BaseWeb::sendChunk(ip);
-    Esp8266BaseWeb::sendChunk("</b></div>");
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Min speed</span><b id=min>%u%%</b></div>",
+             _controller->getMinEffectiveSpeed());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Soft start / stop</span><b id=soft>%u / %u ms</b></div>",
+             _controller->getSoftStartTime(), _controller->getSoftStopTime());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Block detect</span><b id=blkcfg>%u ms</b></div>",
+             _controller->getBlockDetectTime());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Sleep wait</span><b id=sleep>%u s</b></div>",
+             _controller->getSleepWaitTime());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Restore</span><b id=restore>%s</b></div>",
+             _controller->getAutoRestore() ? "On" : "Off");
+    Esp8266BaseWeb::sendChunk(buf);
+
+    snprintf(buf, sizeof(buf), "<div class=stat><span>LED flash</span><b id=ledf>%u ms</b></div>",
+             _controller->getLedFlashDuration());
+    Esp8266BaseWeb::sendChunk(buf);
+
+    long rssi = Esp8266BaseWiFi::isConnected() ? (long)WiFi.RSSI() : 0;
     snprintf(buf, sizeof(buf), "<div class=stat><span>RSSI</span><b id=rssi>%ld dBm</b></div>", rssi);
     Esp8266BaseWeb::sendChunk(buf);
 
@@ -164,12 +191,6 @@ void FanWeb::handleStatusPage() {
     Esp8266BaseWeb::sendChunk("<div class=stat><span>Clock</span><b id=clk>");
     Esp8266BaseWeb::sendChunk(buf);
     Esp8266BaseWeb::sendChunk("</b></div>");
-
-    // Blocked
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Blocked</span><b id=blk class=%s>%s</b></div>",
-             _controller->isBlocked() ? "errtxt" : "oktxt",
-             _controller->isBlocked() ? "Yes" : "No");
-    Esp8266BaseWeb::sendChunk(buf);
 
     Esp8266BaseWeb::sendContent_P(FAN_STATUS_MID);
     snprintf(buf, sizeof(buf), "%d", _controller->getTargetSpeed());
@@ -273,7 +294,7 @@ void FanWeb::handleConfigPage() {
 void FanWeb::handleApiStatus() {
     if (!Esp8266BaseWeb::checkAuth()) return;
     
-    char buf[640];
+    char buf[1024];
     char clock[24];
     const char* stateStr;
     switch (_controller->getState()) {
@@ -294,14 +315,26 @@ void FanWeb::handleApiStatus() {
     
     uint8_t ir_key = _ir->getLearnedKeyIndex();
     snprintf(buf, sizeof(buf),
-        "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"timer_remaining\":%lu,"
-        "\"run_duration\":%lu,\"blocked\":%s,\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
+        "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"gear\":%u,\"rpm\":%u,\"timer_remaining\":%lu,"
+        "\"run_duration\":%lu,\"blocked\":%s,\"min_speed\":%u,\"soft_start\":%u,\"soft_stop\":%u,"
+        "\"block_detect\":%u,\"sleep_wait\":%u,\"auto_restore\":%s,\"led_flash_ms\":%u,"
+        "\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
         "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\"}}",
         stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
+        _controller->getCurrentGear(),
+        _controller->getCurrentRpm(),
         (unsigned long)_controller->getTimerRemaining(),
         (unsigned long)_controller->getTotalRunDuration(),
-        _controller->isBlocked() ? "true" : "false", ip, rssi, clock,
+        _controller->isBlocked() ? "true" : "false",
+        _controller->getMinEffectiveSpeed(),
+        _controller->getSoftStartTime(),
+        _controller->getSoftStopTime(),
+        _controller->getBlockDetectTime(),
+        _controller->getSleepWaitTime(),
+        _controller->getAutoRestore() ? "true" : "false",
+        _controller->getLedFlashDuration(),
+        ip, rssi, clock,
         _ir->isLearning() ? "true" : "false", ir_key,
         (unsigned long)_ir->getLearningRemaining(),
         (unsigned long)_ir->getLearnedSequence(),

@@ -225,6 +225,7 @@ public:
     uint8_t getCurrentGear() const;
     uint8_t getCurrentSpeed() const;
     uint8_t getTargetSpeed() const;
+    uint16_t getCurrentRpm() const;
     uint32_t getTimerRemaining() const;
     uint32_t getTotalRunDuration() const;
     bool isBlocked() const;
@@ -305,7 +306,7 @@ private:
 
 | 路径 | 功能 | 内容 |
 |------|------|------|
-| `/fan` | 状态主页 | 当前转速、目标转速、定时剩余时间、累计运行时长、WiFi 状态/信号强度/IP、当前时间、故障状态 |
+| `/fan` | 状态主页 | 状态（堵转合并显示）、目标/输出速度、档位、RPM、定时、运行时长、关键控制参数、RSSI、当前时间 |
 | `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、访问密码、红外学习、上电恢复策略 |
 | `/esp8266base` | 系统首页 | Esp8266Base 内置 Network、Device、Time 状态页，显示 OTA free 等基础状态 |
 | `/wifi` | WiFi 配网页 | Esp8266Base 内置 STA/AP 配网入口 |
@@ -323,12 +324,19 @@ private:
 ├─────────────────────────────────────┤
 │  Target: 50%                        │
 │  Output: 50%                        │
-│  State: Running                     │
+│  State: Running / Error / Blocked   │
+│  Gear: 2                            │
+│  RPM: 1200 rpm                      │
 │  Timer: 30m 0s                      │
 │  Run time: 12 h                     │
+│  Min speed: 10%                     │
+│  Soft start / stop: 1000 / 1000 ms  │
+│  Block detect: 1500 ms              │
+│  Sleep wait: 60 s                   │
+│  Restore: On                        │
+│  LED flash: 200 ms                  │
 ├─────────────────────────────────────┤
 │  RSSI: -65 dBm                      │
-│  IP：192.168.1.100                  │
 │  Clock: 2026-05-09 12:00:00         │
 ├─────────────────────────────────────┤
 │  [Off] [25] [50] [75] [100]         │
@@ -344,7 +352,7 @@ private:
 
 | 方法 | 路径 | 功能 | 请求示例 | 返回示例 |
 |------|------|------|----------|----------|
-| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"Running","speed":50,"target_speed":50,"timer_remaining":1800,"run_duration":3600,"blocked":false,"ip":"192.168.1.100","rssi":-65,"clock":"2026-05-09 12:00:00","ir_learning":false,"ir_key":0,"ir_remaining":0,"ir_learn_seq":1,"ir_last_protocol":1,"ir_last_code":"0x0000E01F"}}` |
+| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"Running","speed":50,"target_speed":50,"gear":2,"rpm":1200,"timer_remaining":1800,"run_duration":3600,"blocked":false,"min_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"auto_restore":true,"led_flash_ms":200,"ip":"192.168.1.100","rssi":-65,"clock":"2026-05-09 12:00:00","ir_learning":false,"ir_key":0,"ir_remaining":0,"ir_learn_seq":1,"ir_last_protocol":1,"ir_last_code":"0x0000E01F"}}` |
 | POST | `/api/speed` | 设置风扇转速 | `speed=70` | `{"ok":true,"speed":70,"target_speed":70}` |
 | POST | `/api/timer` | 设置定时关机 | `seconds=3600` | `{"ok":true,"timer_remaining":3600}` |
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |

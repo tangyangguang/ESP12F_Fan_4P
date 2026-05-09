@@ -28,6 +28,7 @@ public:
     uint8_t getCurrentGear() const;
     uint8_t getCurrentSpeed() const;
     uint8_t getTargetSpeed() const;
+    uint16_t getCurrentRpm() const;
     uint32_t getTimerRemaining() const;
     uint32_t getTotalRunDuration() const;
     bool isBlocked() const;

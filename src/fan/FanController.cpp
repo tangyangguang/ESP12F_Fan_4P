@@ -158,6 +158,7 @@ SystemState FanController::getState() const { return _state; }
 uint8_t FanController::getCurrentGear() const { return _current_gear; }
 uint8_t FanController::getCurrentSpeed() const { return _fan.getSpeed(); }
 uint8_t FanController::getTargetSpeed() const { return _target_speed; }
+uint16_t FanController::getCurrentRpm() const { return _fan.getRpm(); }
 uint32_t FanController::getTimerRemaining() const { return _timer_remaining; }
 uint32_t FanController::getTotalRunDuration() const { return _run_duration; }
 bool FanController::isBlocked() const { return _fan.isBlocked(); }

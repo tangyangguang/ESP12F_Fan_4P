@@ -147,7 +147,7 @@ namespace {
     static int      g_web_arg_cnt  = 0;
     static uint16_t g_web_last_code = 0;
     static char     g_web_last_body[1024] = {};
-    static char     g_web_page_body[4096] = {};
+    static char     g_web_page_body[8192] = {};
     static MockWebServer g_mock_server;
 
     void appendPageBody(const char* text) {
@@ -1396,6 +1396,65 @@ void test_web_api_speed_get_reports_target_when_blocked() {
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"target_speed\":50"));
 }
 
+void test_web_status_page_merges_blocked_and_shows_business_metrics() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(500);
+    ctrl.setMinEffectiveSpeed(12);
+    ctrl.setSoftStartTime(700);
+    ctrl.setSoftStopTime(800);
+    ctrl.setSleepWaitTime(45);
+    ctrl.setLedFlashDuration(300);
+    ctrl.setSpeed(50);
+    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 2600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    FanWeb::handleStatusPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Error / Blocked"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>IP</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Blocked</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>RPM</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Gear</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Min speed</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Soft start / stop</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Block detect</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Sleep wait</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Restore</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>LED flash</span>"));
+}
+
+void test_web_api_status_reports_business_metrics() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    ctrl.setMinEffectiveSpeed(12);
+    ctrl.setSoftStartTime(700);
+    ctrl.setSoftStopTime(800);
+    ctrl.setBlockDetectTime(900);
+    ctrl.setSleepWaitTime(45);
+    ctrl.setAutoRestore(false);
+    ctrl.setLedFlashDuration(300);
+
+    MockWebServer::setMethod(HTTP_GET);
+    FanWeb::handleApiStatus();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"gear\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"rpm\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"min_speed\":12"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"soft_start\":700"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"soft_stop\":800"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"block_detect\":900"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"sleep_wait\":45"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"auto_restore\":false"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":300"));
+}
+
 void test_web_api_timer() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1683,6 +1742,8 @@ int main() {
     RUN_TEST(test_web_api_speed_get);
     RUN_TEST(test_web_api_speed_set);
     RUN_TEST(test_web_api_speed_get_reports_target_when_blocked);
+    RUN_TEST(test_web_status_page_merges_blocked_and_shows_business_metrics);
+    RUN_TEST(test_web_api_status_reports_business_metrics);
     RUN_TEST(test_web_api_timer);
     RUN_TEST(test_web_api_stop);
     RUN_TEST(test_web_api_config_get);

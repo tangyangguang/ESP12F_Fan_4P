@@ -26,7 +26,7 @@
 | `fan_last_speed` | int32_t | 0 | 上次目标转速，断电恢复用 |
 | `fan_last_timer` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |
 | `fan_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，掉电不丢失 |
-| `fan_ir_key_0` ~ `fan_ir_key_5` | string | 空 | 6 个红外按键的 `protocol:hex_code` 编码 |
+| `fan_ir_key_0` ~ `fan_ir_key_7` | string | 空 | 8 个红外按键的 `protocol:hex_code` 编码 |
 
 ### 1.2 运行时状态（内存中）
 
@@ -184,7 +184,9 @@ enum IREvent {
     IR_EVENT_STOP,
     IR_EVENT_TIMER_30M,
     IR_EVENT_TIMER_1H,
-    IR_EVENT_TIMER_2H
+    IR_EVENT_TIMER_2H,
+    IR_EVENT_TIMER_4H,
+    IR_EVENT_TIMER_8H
 };
 
 class IRReceiverDriver {
@@ -194,7 +196,7 @@ public:
     IREvent getEvent();  // 每帧调用
 
     // 红外学习
-    bool startLearning(uint8_t key_index);  // 进入学习模式，key_index: 0-5
+    bool startLearning(uint8_t key_index);  // 进入学习模式，key_index: 0-7
     bool isLearning() const;
     uint8_t getLearnedKeyIndex() const;
 
@@ -361,7 +363,7 @@ private:
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |
 | GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
 | POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true,"data":{"min_effective_speed":15,"soft_start":500,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
-| POST | `/api/ir/learn` | 开始红外学习 | `key_index=0` | `{"ok":true,"learning":true,"timeout":10}` |
+| POST | `/api/ir/learn` | 开始红外学习 | `key_index=0..7` | `{"ok":true,"learning":true,"timeout":10}` |
 
 ---
 
@@ -375,7 +377,7 @@ private:
 
 | 命名空间 | 用途 | 键数量 |
 |----------|------|--------|
-| `fan` | 风扇配置、运行时状态、红外学习码 | 当前 16 个：7 个配置键、3 个运行时键、6 个红外码键 |
+| `fan` | 风扇配置、运行时状态、红外学习码 | 当前 18 个：7 个配置键、3 个运行时键、8 个红外码键 |
 | Esp8266Base 内置键 | WiFi 凭证、Web 密码等基础库配置 | 由基础库管理 |
 
 ### 6.3 版本迁移策略

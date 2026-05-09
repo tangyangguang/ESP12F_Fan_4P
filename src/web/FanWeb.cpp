@@ -258,9 +258,10 @@ static const char CONFIG_LED_FLASH_END[] PROGMEM = "'><div class=help>0 disables
 static const char CONFIG_AUTO_END[] PROGMEM = ">Enabled</option><option value=0 ";
 static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div class=help>Restore last speed and timer after reboot.</div></div></div>"
     "<button id=saveBtn type=submit>Save</button><span id=saveMsg class='savebar muted'>Ready</span></form>"
-    "<div class=panel><h3>IR learning</h3><div class='chips chips3'>"
+    "<div class=panel><h3>IR learning</h3><div class=chips>"
     "<button onclick='learn(0,\"Speed Up\")'>Speed Up</button><button onclick='learn(1,\"Speed Down\")'>Speed Down</button><button onclick='learn(2,\"Stop\")'>Stop</button>"
     "<button onclick='learn(3,\"30 min\")'>30 min</button><button onclick='learn(4,\"1 h\")'>1 h</button><button onclick='learn(5,\"2 h\")'>2 h</button>"
+    "<button onclick='learn(6,\"4 h\")'>4 h</button><button onclick='learn(7,\"8 h\")'>8 h</button>"
     "</div><div class=help>Press one, then point the remote within 10 seconds.</div><span id=irMsg class='savebar muted'>Ready</span></div>"
     "<script>"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
@@ -594,7 +595,8 @@ void FanWeb::handleApiIrLearn() {
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST && server.hasArg("key_index")) {
         uint32_t idx = 0;
-        if (parseUintArg(server.arg("key_index"), 0, 5, &idx) && _ir->startLearning(static_cast<uint8_t>(idx))) {
+        if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) &&
+            _ir->startLearning(static_cast<uint8_t>(idx))) {
             ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));
             char buf[96];
             snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu}",

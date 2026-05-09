@@ -467,6 +467,16 @@ void FanController::_processIREvents() {
             ESP8266BASE_LOG_I("FanCtrl", "IR: Timer set 2h");
             break;
 
+        case IR_EVENT_TIMER_4H:
+            setTimer(14400);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Timer set 4h");
+            break;
+
+        case IR_EVENT_TIMER_8H:
+            setTimer(28800);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Timer set 8h");
+            break;
+
         default:
             break;
     }
@@ -609,7 +619,7 @@ void FanController::_loadConfig() {
 
     // Load IR codes. Each learned key is stored as one protocol:code value.
     char key[20];
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
         uint8_t proto = 0;
         uint64_t code = 0;
         char value[32];
@@ -658,7 +668,7 @@ void FanController::_saveConfig() {
 }
 
 void FanController::_saveIRCodes() {
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
         _saveIRCode(i);
     }
 }

@@ -459,6 +459,19 @@ void test_ir_set_get_key_code() {
     TEST_ASSERT_EQUAL(0xE01F, code);
 }
 
+void test_ir_extended_timer_key_code() {
+    IRReceiverDriver ir(13);
+    ir.begin();
+    ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
+    uint8_t proto; uint64_t code;
+    TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_8H, &proto, &code));
+    TEST_ASSERT_EQUAL(2, proto);
+    TEST_ASSERT_EQUAL(0x00FFAA55, code);
+    TEST_ASSERT_TRUE(ir.startLearning(IR_KEY_TIMER_8H));
+    TEST_ASSERT_EQUAL(IR_KEY_TIMER_8H, ir.getLearnedKeyIndex());
+    TEST_ASSERT_FALSE(ir.startLearning(IR_KEY_COUNT));
+}
+
 // ─── LedIndicator Tests ─────────────────────────────────────────────────────
 
 void test_led_indicator_active_low_gear_brightness() {
@@ -1074,6 +1087,7 @@ void test_controller_ir_persistence() {
 
     ir.setKeyCode(0, 1, 0xE01F);
     ir.setKeyCode(1, 1, 0xD827);
+    ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
     ctrl.testSaveConfig();
 
     FanDriver fan2(5, 12); ButtonDriver btn2(14, 4);
@@ -1085,6 +1099,9 @@ void test_controller_ir_persistence() {
     TEST_ASSERT_TRUE(ir2.getKeyCode(0, &p, &c));
     TEST_ASSERT_EQUAL(1,      p);
     TEST_ASSERT_EQUAL(0xE01F, c);
+    TEST_ASSERT_TRUE(ir2.getKeyCode(IR_KEY_TIMER_8H, &p, &c));
+    TEST_ASSERT_EQUAL(2, p);
+    TEST_ASSERT_EQUAL(0x00FFAA55, c);
 }
 
 void test_controller_ir_persistence_keeps_equivalent_existing_format() {
@@ -1310,6 +1327,21 @@ void test_controller_ir_timer_operation_flashes_once() {
     TEST_ASSERT_EQUAL(1800, ctrl.getTimerRemaining());
     TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_ir_extended_timer_operations() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ir.testQueueEvent(IR_EVENT_TIMER_4H);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(14400, ctrl.getTimerRemaining());
+
+    ir.testQueueEvent(IR_EVENT_TIMER_8H);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(28800, ctrl.getTimerRemaining());
 }
 
 void test_controller_ir_learning_success_flashes_once() {
@@ -1681,6 +1713,20 @@ void test_config_page_contains_led_flash_field() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "0 disables action feedback flash."));
 }
 
+void test_config_page_contains_extended_ir_learning_buttons() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    FanWeb::handleConfigPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(6,\"4 h\")"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">4 h</button>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(7,\"8 h\")"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</button>"));
+}
+
 void test_status_page_contains_4h_and_8h_timer_presets() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1710,6 +1756,26 @@ void test_web_api_ir_learn() {
     TEST_ASSERT_EQUAL(2, ir.getLearnedKeyIndex());
 }
 
+void test_web_api_ir_learn_accepts_8h_and_rejects_out_of_range() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("key_index", "7");
+    FanWeb::handleApiIrLearn();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_TRUE(ir.isLearning());
+    TEST_ASSERT_EQUAL(IR_KEY_TIMER_8H, ir.getLearnedKeyIndex());
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("key_index", "8");
+    FanWeb::handleApiIrLearn();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -1736,6 +1802,7 @@ int main() {
     RUN_TEST(test_ir_learning_mode);
     RUN_TEST(test_ir_learning_timeout);
     RUN_TEST(test_ir_set_get_key_code);
+    RUN_TEST(test_ir_extended_timer_key_code);
 
     // LedIndicator
     RUN_TEST(test_led_indicator_active_low_gear_brightness);
@@ -1789,6 +1856,7 @@ int main() {
     RUN_TEST(test_controller_button_valid_operation_flashes_once);
     RUN_TEST(test_controller_button_boundary_operation_does_not_flash);
     RUN_TEST(test_controller_ir_timer_operation_flashes_once);
+    RUN_TEST(test_controller_ir_extended_timer_operations);
     RUN_TEST(test_controller_ir_learning_success_flashes_once);
     RUN_TEST(test_controller_factory_reset);
 
@@ -1810,8 +1878,10 @@ int main() {
     RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
     RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);
     RUN_TEST(test_config_page_contains_led_flash_field);
+    RUN_TEST(test_config_page_contains_extended_ir_learning_buttons);
     RUN_TEST(test_status_page_contains_4h_and_8h_timer_presets);
     RUN_TEST(test_web_api_ir_learn);
+    RUN_TEST(test_web_api_ir_learn_accepts_8h_and_rejects_out_of_range);
 
     return UNITY_END();
 }

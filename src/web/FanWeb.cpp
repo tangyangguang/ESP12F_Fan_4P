@@ -25,6 +25,20 @@ bool parseUintArg(const String& value, uint32_t min_value, uint32_t max_value, u
     *out = parsed;
     return true;
 }
+
+const char* irKeyName(uint8_t index) {
+    switch (index) {
+        case IR_KEY_SPEED_UP: return "Speed Up";
+        case IR_KEY_SPEED_DOWN: return "Speed Down";
+        case IR_KEY_STOP: return "Stop";
+        case IR_KEY_TIMER_30M: return "30 min";
+        case IR_KEY_TIMER_1H: return "1 h";
+        case IR_KEY_TIMER_2H: return "2 h";
+        case IR_KEY_TIMER_4H: return "4 h";
+        case IR_KEY_TIMER_8H: return "8 h";
+        default: return "Unknown";
+    }
+}
 }
 
 FanWeb::FanWeb(FanController& controller, IRReceiverDriver& ir) {
@@ -53,6 +67,7 @@ static const char APP_STYLE[] PROGMEM =
     "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:14px;font-weight:400;margin:0;color:#111827}"
     ".row input:not([type=submit]){height:42px;min-height:42px;margin:0!important;padding:0 10px;display:block}.row button{height:42px;min-height:42px;padding:0 7px;align-self:center}"
     ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:7px 0 0;line-height:1.4}"
+    ".irlist{display:grid;gap:6px}.irrow{display:grid;grid-template-columns:1fr 72px;gap:7px;align-items:center;background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px}.irrow b{display:block;font-size:14px;font-weight:400;color:#111827}.irrow span{display:block;color:#6b7280;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.irrow button{min-height:34px;padding:0 7px}"
     ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f8fafc;border:1px solid #e8edf3;font-size:14px}.savebar.oktxt{background:#f0f9f4;border-color:#b7e4c7}.savebar.errtxt{background:#fff5f3;border-color:#f1b8ad}"
     "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:6px;padding:9px;max-height:430px;overflow:auto;font-size:14px;font-weight:400}"
     "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
@@ -258,19 +273,27 @@ static const char CONFIG_LED_FLASH_END[] PROGMEM = "'><div class=help>0 disables
 static const char CONFIG_AUTO_END[] PROGMEM = ">Enabled</option><option value=0 ";
 static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div class=help>Restore last speed and timer after reboot.</div></div></div>"
     "<button id=saveBtn type=submit>Save</button><span id=saveMsg class='savebar muted'>Ready</span></form>"
-    "<div class=panel><h3>IR learning</h3><div class=chips>"
-    "<button onclick='learn(0,\"Speed Up\")'>Speed Up</button><button onclick='learn(1,\"Speed Down\")'>Speed Down</button><button onclick='learn(2,\"Stop\")'>Stop</button>"
-    "<button onclick='learn(3,\"30 min\")'>30 min</button><button onclick='learn(4,\"1 h\")'>1 h</button><button onclick='learn(5,\"2 h\")'>2 h</button>"
-    "<button onclick='learn(6,\"4 h\")'>4 h</button><button onclick='learn(7,\"8 h\")'>8 h</button>"
+    "<div class=panel><h3>IR learning</h3><div class=irlist>"
+    "<div class=irrow><div><b>Speed Up</b><span id=irv0>Loading</span></div><button onclick='learn(0,\"Speed Up\")'>Learn</button></div>"
+    "<div class=irrow><div><b>Speed Down</b><span id=irv1>Loading</span></div><button onclick='learn(1,\"Speed Down\")'>Learn</button></div>"
+    "<div class=irrow><div><b>Stop</b><span id=irv2>Loading</span></div><button onclick='learn(2,\"Stop\")'>Learn</button></div>"
+    "<div class=irrow><div><b>30 min</b><span id=irv3>Loading</span></div><button onclick='learn(3,\"30 min\")'>Learn</button></div>"
+    "<div class=irrow><div><b>1 h</b><span id=irv4>Loading</span></div><button onclick='learn(4,\"1 h\")'>Learn</button></div>"
+    "<div class=irrow><div><b>2 h</b><span id=irv5>Loading</span></div><button onclick='learn(5,\"2 h\")'>Learn</button></div>"
+    "<div class=irrow><div><b>4 h</b><span id=irv6>Loading</span></div><button onclick='learn(6,\"4 h\")'>Learn</button></div>"
+    "<div class=irrow><div><b>8 h</b><span id=irv7>Loading</span></div><button onclick='learn(7,\"8 h\")'>Learn</button></div>"
     "</div><div class=help>Press one, then point the remote within 10 seconds.</div><span id=irMsg class='savebar muted'>Ready</span></div>"
     "<script>"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
+    "function drawIr(d){if(!d||!d.ir_keys)return;d.ir_keys.forEach(k=>{var e=document.getElementById('irv'+k.index);if(e)e.textContent=k.learned?('Protocol '+k.protocol+' - '+k.code):'Not learned'})}"
+    "function reloadIr(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)drawIr(j.data)}).catch(()=>setIr('IR list refresh failed','errtxt'))}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
     "function reloadCfg(f){fetch('/api/config').then(r=>r.json()).then(j=>{if(j.ok)applyCfg(j.data,f)})}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
-    "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),500)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
+    "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;drawIr(d);if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),500)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
     "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
+    "reloadIr()"
     "</script>";
 
 void FanWeb::handleConfigPage() {
@@ -327,7 +350,8 @@ void FanWeb::handleConfigPage() {
 void FanWeb::handleApiStatus() {
     if (!Esp8266BaseWeb::checkAuth()) return;
     
-    char buf[1024];
+    char buf[1800];
+    char ir_keys[900];
     char clock[24];
     const char* stateStr;
     switch (_controller->getState()) {
@@ -346,6 +370,26 @@ void FanWeb::handleApiStatus() {
         strcpy(clock, "N/A");
     }
     
+    size_t ir_off = 0;
+    ir_off += snprintf(ir_keys + ir_off, sizeof(ir_keys) - ir_off, "[");
+    for (uint8_t i = 0; i < IR_KEY_COUNT && ir_off < sizeof(ir_keys); i++) {
+        uint8_t protocol = 0;
+        uint64_t code = 0;
+        _ir->getKeyCode(i, &protocol, &code);
+        bool learned = protocol != 0 || code != 0;
+        ir_off += snprintf(ir_keys + ir_off, sizeof(ir_keys) - ir_off,
+            "%s{\"index\":%u,\"name\":\"%s\",\"learned\":%s,\"protocol\":%u,\"code\":\"0x%016llX\"}",
+            i == 0 ? "" : ",",
+            i,
+            irKeyName(i),
+            learned ? "true" : "false",
+            protocol,
+            (unsigned long long)code
+        );
+    }
+    snprintf(ir_keys + (ir_off < sizeof(ir_keys) ? ir_off : sizeof(ir_keys) - 1),
+             ir_off < sizeof(ir_keys) ? sizeof(ir_keys) - ir_off : 1, "]");
+
     uint8_t ir_key = _ir->getLearnedKeyIndex();
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"gear\":%u,\"rpm\":%u,\"timer_remaining\":%lu,"
@@ -353,7 +397,7 @@ void FanWeb::handleApiStatus() {
         "\"block_detect\":%u,\"sleep_wait\":%u,\"auto_restore\":%s,\"led_flash_ms\":%u,"
         "\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
-        "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\"}}",
+        "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\",\"ir_keys\":%s}}",
         stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
         _controller->getCurrentGear(),
         _controller->getCurrentRpm(),
@@ -372,7 +416,8 @@ void FanWeb::handleApiStatus() {
         (unsigned long)_ir->getLearningRemaining(),
         (unsigned long)_ir->getLearnedSequence(),
         _ir->getLastProtocol(),
-        (unsigned long long)_ir->getLastCode()
+        (unsigned long long)_ir->getLastCode(),
+        ir_keys
     );
     Esp8266BaseWeb::server().send(200, "application/json", buf);
 }

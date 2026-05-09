@@ -146,7 +146,7 @@ namespace {
     static WebArg   g_web_args[8]  = {};
     static int      g_web_arg_cnt  = 0;
     static uint16_t g_web_last_code = 0;
-    static char     g_web_last_body[1024] = {};
+    static char     g_web_last_body[2048] = {};
     static char     g_web_page_body[8192] = {};
     static MockWebServer g_mock_server;
 
@@ -1512,6 +1512,7 @@ void test_web_api_status_reports_business_metrics() {
     ctrl.setSleepWaitTime(45);
     ctrl.setAutoRestore(false);
     ctrl.setLedFlashDuration(300);
+    ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
 
     MockWebServer::setMethod(HTTP_GET);
     FanWeb::handleApiStatus();
@@ -1525,6 +1526,10 @@ void test_web_api_status_reports_business_metrics() {
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"sleep_wait\":45"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"auto_restore\":false"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":300"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"ir_keys\":["));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"name\":\"8 h\""));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"learned\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"code\":\"0x0000000000FFAA55\""));
 }
 
 void test_web_api_timer() {
@@ -1721,10 +1726,14 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     ctrl.begin();
 
     FanWeb::handleConfigPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=irv0"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Speed Up</b>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(6,\"4 h\")"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">4 h</button>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">4 h</b>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(7,\"8 h\")"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</button>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</b>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "drawIr(d)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "reloadIr()"));
 }
 
 void test_status_page_contains_4h_and_8h_timer_presets() {

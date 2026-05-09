@@ -86,7 +86,7 @@ LED 状态优先级固定为：故障快闪（5Hz） > WiFi 未连接慢闪（1H
 | `/api/config` | GET / POST | 读取或保存配置参数 |
 | `/api/ir/learn` | POST | 启动红外学习，POST 参数 `key_index=0..7`；清除红外码使用 `key_index=0..7&clear=1` |
 
-由于 Esp8266Base 当前配置的应用 API 配额为 6 个，本项目只注册以上 6 个 API。红外学习状态由学习请求结果、`/api/status` 中的 `ir_learn_seq` 和 `ir_last_*` 观察，不单独占用一个公开 API；学习序号变化表示本次学习完成。
+由于 Esp8266Base 当前配置的应用 API 配额为 6 个，本项目只注册以上 6 个 API。红外学习状态由学习请求结果、`/api/status` 中的 `ir_learn_seq`、`ir_last_*`、`ir_reject_seq` 和 `ir_duplicate_key` 观察，不单独占用一个公开 API；学习序号变化表示本次学习完成，拒绝序号或重复键位表示本次按键已绑定到其他命令。
 
 ## 日志与配置审计
 

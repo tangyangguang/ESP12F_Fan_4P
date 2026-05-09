@@ -82,11 +82,7 @@ IREvent IRReceiverDriver::getEvent() {
 
     // If in learning mode, save the code and exit learning
     if (_learning) {
-        setKeyCode(_learning_key_index, _last_protocol, _last_code);
-        _learning = false;
-        _learned_dirty = true;
-        _learned_sequence++;
-        _ignore_until_tick = millis() + POST_LEARN_IGNORE_MS;
+        completeLearning(_last_protocol, _last_code);
         return IR_EVENT_NONE;
     }
 
@@ -170,6 +166,39 @@ uint32_t IRReceiverDriver::getLearnedSequence() const {
     return _learned_sequence;
 }
 
+bool IRReceiverDriver::findDuplicateKey(uint8_t protocol, uint64_t code, uint8_t except_key, uint8_t* duplicate_key) const {
+    if (protocol == 0 && code == 0) return false;
+    for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
+        if (i == except_key) continue;
+        if (_protocols[i] == protocol && _codes[i] == code) {
+            if (duplicate_key != nullptr) *duplicate_key = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IRReceiverDriver::completeLearning(uint8_t protocol, uint64_t code) {
+    if (!_learning || _learning_key_index >= IR_KEY_COUNT) return false;
+
+    uint8_t duplicate_key = 0;
+    if (findDuplicateKey(protocol, code, _learning_key_index, &duplicate_key)) {
+        ESP8266BASE_LOG_W("IR", "Rejected duplicate learned code key=%u duplicate_of=%u protocol=%u code=0x%08llX",
+                          _learning_key_index, duplicate_key, protocol,
+                          static_cast<unsigned long long>(code));
+        return false;
+    }
+
+    setKeyCode(_learning_key_index, protocol, code);
+    _last_protocol = protocol;
+    _last_code = code;
+    _learning = false;
+    _learned_dirty = true;
+    _learned_sequence++;
+    _ignore_until_tick = millis() + POST_LEARN_IGNORE_MS;
+    return true;
+}
+
 #ifdef UNIT_TEST
 void IRReceiverDriver::testQueueEvent(IREvent event) {
     _test_event = event;
@@ -184,6 +213,11 @@ void IRReceiverDriver::testMarkLearned(uint8_t key_index, uint8_t protocol, uint
     _learning = false;
     _learned_dirty = true;
     _learned_sequence++;
+}
+
+bool IRReceiverDriver::testLearnDecoded(uint8_t key_index, uint8_t protocol, uint64_t code) {
+    if (!startLearning(key_index)) return false;
+    return completeLearning(protocol, code);
 }
 #endif
 

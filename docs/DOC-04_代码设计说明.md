@@ -363,7 +363,7 @@ private:
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |
 | GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
 | POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true,"data":{"min_effective_speed":15,"soft_start":500,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
-| POST | `/api/ir/learn` | 开始红外学习 | `key_index=0..7` | `{"ok":true,"learning":true,"timeout":10}` |
+| POST | `/api/ir/learn` | 开始红外学习或清除红外码 | `key_index=0..7` / `key_index=0..7&clear=1` | `{"ok":true,"learning":true,"timeout":10}` / `{"ok":true,"changed":true}` |
 
 ---
 

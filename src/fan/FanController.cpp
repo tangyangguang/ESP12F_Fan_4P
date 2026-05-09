@@ -246,6 +246,23 @@ bool FanController::resetFactory() {
     return true;
 }
 
+bool FanController::clearIRCode(uint8_t key_index) {
+    if (key_index >= IR_KEY_COUNT) return false;
+
+    uint8_t proto = 0;
+    uint64_t code = 0;
+    _ir.getKeyCode(key_index, &proto, &code);
+    if (proto == 0 && code == 0) return false;
+
+    char key[20];
+    snprintf(key, sizeof(key), "%s%d", KEY_IR_ENTRY, key_index);
+    _ir.setKeyCode(key_index, 0, 0);
+    bool ok = Esp8266BaseConfig::setStr(key, "");
+    ok = Esp8266BaseConfig::flush() && ok;
+    ESP8266BASE_LOG_I("FanCtrl", "IR code cleared key=%u result=%s", key_index, ok ? "success" : "failed");
+    return ok;
+}
+
 void FanController::notifyUserAction() {
     _led.flashOnce();
 }

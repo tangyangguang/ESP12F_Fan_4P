@@ -58,10 +58,13 @@ public:
 #ifdef UNIT_TEST
     void testQueueEvent(IREvent event);
     void testMarkLearned(uint8_t key_index, uint8_t protocol, uint64_t code);
+    bool testLearnDecoded(uint8_t key_index, uint8_t protocol, uint64_t code);
 #endif
 
 private:
     IREvent matchCode(uint8_t protocol, uint64_t code);
+    bool findDuplicateKey(uint8_t protocol, uint64_t code, uint8_t except_key, uint8_t* duplicate_key) const;
+    bool completeLearning(uint8_t protocol, uint64_t code);
 
     uint8_t _recv_pin;
     IRrecv _irrecv;

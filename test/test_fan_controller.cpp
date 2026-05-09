@@ -147,7 +147,7 @@ namespace {
     static int      g_web_arg_cnt  = 0;
     static uint16_t g_web_last_code = 0;
     static char     g_web_last_body[1024] = {};
-    static char     g_web_page_body[8192] = {};
+    static char     g_web_page_body[12288] = {};
     static MockWebServer g_mock_server;
 
     void appendPageBody(const char* text) {
@@ -470,6 +470,25 @@ void test_ir_extended_timer_key_code() {
     TEST_ASSERT_TRUE(ir.startLearning(IR_KEY_TIMER_8H));
     TEST_ASSERT_EQUAL(IR_KEY_TIMER_8H, ir.getLearnedKeyIndex());
     TEST_ASSERT_FALSE(ir.startLearning(IR_KEY_COUNT));
+}
+
+void test_ir_learning_rejects_duplicate_code_for_other_key() {
+    IRReceiverDriver ir(13);
+    ir.begin();
+    ir.setKeyCode(IR_KEY_TIMER_2H, 76, 0xD88);
+
+    TEST_ASSERT_FALSE(ir.testLearnDecoded(IR_KEY_TIMER_4H, 76, 0xD88));
+    TEST_ASSERT_TRUE(ir.isLearning());
+    TEST_ASSERT_EQUAL(0, ir.getLearnedSequence());
+
+    uint8_t proto; uint64_t code;
+    TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_4H, &proto, &code));
+    TEST_ASSERT_EQUAL(0, proto);
+    TEST_ASSERT_EQUAL(0, code);
+
+    TEST_ASSERT_TRUE(ir.testLearnDecoded(IR_KEY_TIMER_2H, 76, 0xD88));
+    TEST_ASSERT_FALSE(ir.isLearning());
+    TEST_ASSERT_EQUAL(1, ir.getLearnedSequence());
 }
 
 // ─── LedIndicator Tests ─────────────────────────────────────────────────────
@@ -1119,6 +1138,27 @@ void test_controller_ir_persistence_keeps_equivalent_existing_format() {
     TEST_ASSERT_EQUAL_STRING("1:E01F", value);
 }
 
+void test_controller_clear_ir_code_persists_empty_value() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
+    ctrl.testSaveConfig();
+
+    TEST_ASSERT_TRUE(ctrl.clearIRCode(IR_KEY_TIMER_8H));
+    uint8_t proto; uint64_t code;
+    TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_8H, &proto, &code));
+    TEST_ASSERT_EQUAL(0, proto);
+    TEST_ASSERT_EQUAL(0, code);
+
+    char value[32];
+    TEST_ASSERT_TRUE(Esp8266BaseConfig::getStr("fan_ir_key_7", value, sizeof(value), "x"));
+    TEST_ASSERT_EQUAL_STRING("", value);
+    TEST_ASSERT_FALSE(ctrl.clearIRCode(IR_KEY_TIMER_8H));
+}
+
 void test_controller_block_recovery_failure_stays_error() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1720,17 +1760,21 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     FanController ctrl(fan, btn, led, ir);
     FanWeb web(ctrl, ir);
     ctrl.begin();
+    ir.setKeyCode(IR_KEY_TIMER_2H, 2, 0x00FFAA55);
     ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
 
     FanWeb::handleConfigPage();
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=irv0"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Speed Up</b>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=irv7"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Protocol 2 - 0x0000000000FFAA55"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Duplicate: protocol 2 - 0x0000000000FFAA55"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=irv7 class=warn"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(6,\"4 h\")"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">4 h</b>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "learn(7,\"8 h\")"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">8 h</b>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "clearIr(7,\"8 h\")"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Clear</button>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v)"));
 }
 
@@ -1783,6 +1827,35 @@ void test_web_api_ir_learn_accepts_8h_and_rejects_out_of_range() {
     TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
 }
 
+void test_web_api_ir_clear() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    ir.setKeyCode(IR_KEY_TIMER_8H, 2, 0x00FFAA55);
+    ctrl.testSaveConfig();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("key_index", "7");
+    MockWebServer::setArg("clear", "1");
+    FanWeb::handleApiIrLearn();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":true"));
+
+    uint8_t proto; uint64_t code;
+    TEST_ASSERT_TRUE(ir.getKeyCode(IR_KEY_TIMER_8H, &proto, &code));
+    TEST_ASSERT_EQUAL(0, proto);
+    TEST_ASSERT_EQUAL(0, code);
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("key_index", "7");
+    MockWebServer::setArg("clear", "1");
+    FanWeb::handleApiIrLearn();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":false"));
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -1810,6 +1883,7 @@ int main() {
     RUN_TEST(test_ir_learning_timeout);
     RUN_TEST(test_ir_set_get_key_code);
     RUN_TEST(test_ir_extended_timer_key_code);
+    RUN_TEST(test_ir_learning_rejects_duplicate_code_for_other_key);
 
     // LedIndicator
     RUN_TEST(test_led_indicator_active_low_gear_brightness);
@@ -1852,6 +1926,7 @@ int main() {
     RUN_TEST(test_controller_config_persistence);
     RUN_TEST(test_controller_ir_persistence);
     RUN_TEST(test_controller_ir_persistence_keeps_equivalent_existing_format);
+    RUN_TEST(test_controller_clear_ir_code_persists_empty_value);
     RUN_TEST(test_controller_block_recovery_failure_stays_error);
     RUN_TEST(test_controller_block_recovery_success_returns_to_running);
     RUN_TEST(test_controller_wifi_disconnected_uses_slow_blink);
@@ -1889,6 +1964,7 @@ int main() {
     RUN_TEST(test_status_page_contains_4h_and_8h_timer_presets);
     RUN_TEST(test_web_api_ir_learn);
     RUN_TEST(test_web_api_ir_learn_accepts_8h_and_rejects_out_of_range);
+    RUN_TEST(test_web_api_ir_clear);
 
     return UNITY_END();
 }

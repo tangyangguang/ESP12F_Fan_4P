@@ -40,6 +40,7 @@ public:
     bool stop();
     bool resetFactory();
     void notifyUserAction();
+    bool clearIRCode(uint8_t key_index);
 
     // Configuration getters/setters
     uint8_t getMinEffectiveSpeed() const;

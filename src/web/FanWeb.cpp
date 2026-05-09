@@ -67,7 +67,7 @@ static const char APP_STYLE[] PROGMEM =
     "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:14px;font-weight:400;margin:0;color:#111827}"
     ".row input:not([type=submit]){height:42px;min-height:42px;margin:0!important;padding:0 10px;display:block}.row button{height:42px;min-height:42px;padding:0 7px;align-self:center}"
     ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:7px 0 0;line-height:1.4}"
-    ".irlist{display:grid;gap:6px}.irrow{display:grid;grid-template-columns:1fr 72px;gap:7px;align-items:center;background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:7px 8px}.irrow b{display:block;font-size:14px;font-weight:400;color:#111827}.irrow span{display:block;color:#6b7280;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.irrow button{min-height:34px;padding:0 7px}"
+    ".irlist{display:grid;gap:5px}.irrow{display:grid;grid-template-columns:1fr 58px 58px;gap:6px;align-items:center;background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:6px 8px}.irrow b{display:block;font-size:14px;font-weight:400;color:#111827}.irrow span{display:block;color:#6b7280;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.irrow span.warn{color:#b45309}.irrow button{min-height:32px;padding:0 6px}.irrow button.secondary{background:#6b7280}"
     ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f8fafc;border:1px solid #e8edf3;font-size:14px}.savebar.oktxt{background:#f0f9f4;border-color:#b7e4c7}.savebar.errtxt{background:#fff5f3;border-color:#f1b8ad}"
     "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:6px;padding:9px;max-height:430px;overflow:auto;font-size:14px;font-weight:400}"
     "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
@@ -285,6 +285,7 @@ static const char CONFIG_IR_END[] PROGMEM =
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
     "function watchIr(i,n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(i,n,seq),500)}else if(d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v);setIr('Learned '+n+' - '+v,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
     "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(i,n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
+    "function clearIr(i,n){setIr('Clearing '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i+'&clear=1'}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{if(x.ok&&x.j.ok){setIrRow(i,'Not learned');setIr(x.j.changed?('Cleared '+n):('No code for '+n),x.j.changed?'oktxt':'muted')}else setIr('Clear failed','errtxt')}).catch(()=>setIr('Clear failed: network error','errtxt'))}"
     "</script>";
 
 void FanWeb::handleConfigPage() {
@@ -337,18 +338,34 @@ void FanWeb::handleConfigPage() {
         uint8_t protocol = 0;
         uint64_t code = 0;
         _ir->getKeyCode(i, &protocol, &code);
-        char value[42];
+        bool duplicate = false;
         if (protocol != 0 || code != 0) {
-            snprintf(value, sizeof(value), "Protocol %u - 0x%016llX",
+            for (uint8_t j = 0; j < IR_KEY_COUNT; j++) {
+                if (j == i) continue;
+                uint8_t other_protocol = 0;
+                uint64_t other_code = 0;
+                _ir->getKeyCode(j, &other_protocol, &other_code);
+                if (protocol == other_protocol && code == other_code) {
+                    duplicate = true;
+                    break;
+                }
+            }
+        }
+        char value[56];
+        if (protocol != 0 || code != 0) {
+            snprintf(value, sizeof(value), "%s%u - 0x%016llX",
+                     duplicate ? "Duplicate: protocol " : "Protocol ",
                      protocol, (unsigned long long)code);
         } else {
             strcpy(value, "Not learned");
         }
-        char row[220];
+        char row[320];
         snprintf(row, sizeof(row),
-            "<div class=irrow><div><b>%s</b><span id=irv%u>%s</span></div>"
-            "<button onclick='learn(%u,\"%s\")'>Learn</button></div>",
-            irKeyName(i), i, value, i, irKeyName(i));
+            "<div class=irrow><div><b>%s</b><span id=irv%u%s>%s</span></div>"
+            "<button onclick='learn(%u,\"%s\")'>Learn</button>"
+            "<button class=secondary onclick='clearIr(%u,\"%s\")'>Clear</button></div>",
+            irKeyName(i), i, duplicate ? " class=warn" : "", value,
+            i, irKeyName(i), i, irKeyName(i));
         Esp8266BaseWeb::sendChunk(row);
     }
     Esp8266BaseWeb::sendContent_P(CONFIG_IR_END);
@@ -629,6 +646,16 @@ void FanWeb::handleApiIrLearn() {
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST && server.hasArg("key_index")) {
         uint32_t idx = 0;
+        if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) && server.hasArg("clear")) {
+            bool changed = _controller->clearIRCode(static_cast<uint8_t>(idx));
+            if (changed) _controller->notifyUserAction();
+            ESP8266BASE_LOG_I("FanWeb", "user_action ir_clear key=%lu changed=%u",
+                              static_cast<unsigned long>(idx), changed ? 1U : 0U);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "{\"ok\":true,\"changed\":%s}", changed ? "true" : "false");
+            server.send(200, "application/json", buf);
+            return;
+        }
         if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) &&
             _ir->startLearning(static_cast<uint8_t>(idx))) {
             ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));

@@ -59,7 +59,7 @@ LED 状态优先级固定为：故障快闪（5Hz） > WiFi 未连接慢闪（1H
 
 `/fan` 是主控制页，显示状态（堵转会合并显示为 `Error / Blocked`）、目标速度、实际输出、档位、RPM、定时倒计时、运行时长、关键控制参数、RSSI、日期和时间。页面提供速度预设、自定义速度、定时预设、自定义定时、取消定时和停止风扇操作。
 
-`/config` 是配置页，可修改最低速度、休眠等待时间、软启动、软停止、堵转检测时间、操作反馈闪烁时长和上电恢复策略，也提供红外学习入口。红外学习区由服务端分块渲染所有命令，并显示每个命令是否已学习、协议号和红外码。配置保存成功会显示 changed 数；无变化时仅显示 no changes，不触发 LED 操作反馈。
+`/config` 是配置页，可修改最低速度、休眠等待时间、软启动、软停止、堵转检测时间、操作反馈闪烁时长和上电恢复策略，也提供红外学习入口。红外学习区由服务端分块渲染所有命令，并显示每个命令是否已学习、协议号和红外码；每个命令可单独学习或清除。同一个红外码只能绑定一个命令，已有重复绑定会标记为 Duplicate。配置保存成功会显示 changed 数；无变化时仅显示 no changes，不触发 LED 操作反馈。
 
 `/esp8266base` 是 Esp8266Base 内置系统首页，显示 Network、Device、Time 等基础状态，包括 Hostname、WiFi、SSID、IP、RSSI、MAC、固件版本、Boot count、Chip ID、CPU、Flash、Sketch、OTA free、Uptime、NTP 和 Boot time。
 
@@ -84,7 +84,7 @@ LED 状态优先级固定为：故障快闪（5Hz） > WiFi 未连接慢闪（1H
 | `/api/timer` | GET / POST | 读取或设置定时，POST 参数 `seconds=0..356400` |
 | `/api/stop` | POST | 停止风扇并清除定时 |
 | `/api/config` | GET / POST | 读取或保存配置参数 |
-| `/api/ir/learn` | POST | 启动红外学习，POST 参数 `key_index=0..7` |
+| `/api/ir/learn` | POST | 启动红外学习，POST 参数 `key_index=0..7`；清除红外码使用 `key_index=0..7&clear=1` |
 
 由于 Esp8266Base 当前配置的应用 API 配额为 6 个，本项目只注册以上 6 个 API。红外学习状态由学习请求结果、`/api/status` 中的 `ir_learn_seq` 和 `ir_last_*` 观察，不单独占用一个公开 API；学习序号变化表示本次学习完成。
 

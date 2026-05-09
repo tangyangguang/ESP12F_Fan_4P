@@ -20,6 +20,7 @@ void delay(uint32_t ms) { g_mock_millis += ms; }
 
 static uint8_t g_pin_mode[20]  = {0};
 static uint8_t g_pin_state[20] = {0};
+static uint8_t g_pin_write_kind[20] = {0};
 static uint32_t g_pwm_freq     = 0;
 static uint8_t g_pwm_value[20] = {0};
 static void (*g_isr_handlers[20])() = {nullptr};
@@ -27,9 +28,9 @@ static bool g_esp_restart_called = false;
 
 void pinMode(uint8_t pin, uint8_t mode)                          { g_pin_mode[pin] = mode; }
 uint8_t digitalRead(uint8_t pin)                                  { return g_pin_state[pin]; }
-void digitalWrite(uint8_t pin, uint8_t val)                       { g_pin_state[pin] = val; }
+void digitalWrite(uint8_t pin, uint8_t val)                       { g_pin_state[pin] = val; g_pin_write_kind[pin] = 1; }
 void analogWriteFreq(uint32_t freq)                               { g_pwm_freq = freq; }
-void analogWrite(uint8_t pin, uint8_t val)                        { g_pwm_value[pin] = val; }
+void analogWrite(uint8_t pin, uint8_t val)                        { g_pwm_value[pin] = val; g_pin_write_kind[pin] = 2; }
 void attachInterrupt(uint8_t pin, void (*h)(), int)               { g_isr_handlers[pin] = h; }
 void detachInterrupt(uint8_t pin)                                  { g_isr_handlers[pin] = nullptr; }
 uint8_t digitalPinToInterrupt(uint8_t pin)                        { return pin; }
@@ -117,11 +118,13 @@ namespace Esp8266BaseSleep {
 // ─── Mock Esp8266BaseWiFi ───────────────────────────────────────────────────
 
 namespace Esp8266BaseWiFi {
-    bool isConnected()               { return true; }
+    static bool g_connected = true;
+    bool isConnected()               { return g_connected; }
     const char* ip()                 { return "0.0.0.0"; }
     bool clearCredentials()          { return true; }
     bool setHostname(const char*)    { return true; }
-    Esp8266BaseWiFiState state()     { return Esp8266BaseWiFiState::CONNECTED; }
+    Esp8266BaseWiFiState state()     { return g_connected ? Esp8266BaseWiFiState::CONNECTED : Esp8266BaseWiFiState::AP_CONFIG; }
+    void testSetConnected(bool connected) { g_connected = connected; }
 }
 
 // ─── Mock Esp8266BaseNTP ────────────────────────────────────────────────────
@@ -142,7 +145,15 @@ namespace {
     static int      g_web_arg_cnt  = 0;
     static uint16_t g_web_last_code = 0;
     static char     g_web_last_body[1024] = {};
+    static char     g_web_page_body[4096] = {};
     static MockWebServer g_mock_server;
+
+    void appendPageBody(const char* text) {
+        if (!text) return;
+        size_t used = strlen(g_web_page_body);
+        if (used >= sizeof(g_web_page_body) - 1) return;
+        strncat(g_web_page_body, text, sizeof(g_web_page_body) - used - 1);
+    }
 }
 
 int      MockWebServer::method()              const { return g_web_method; }
@@ -173,6 +184,7 @@ void     MockWebServer::setArg(const char* n, const char* v) {
 void     MockWebServer::reset() {
     g_web_method = HTTP_GET; g_web_arg_cnt = 0;
     g_web_last_code = 0; g_web_last_body[0] = '\0';
+    g_web_page_body[0] = '\0';
     memset(g_web_args, 0, sizeof(g_web_args));
 }
 uint16_t MockWebServer::lastCode() { return g_web_last_code; }
@@ -183,8 +195,8 @@ namespace Esp8266BaseWeb {
     bool checkAuth()                   { return true; }
     void sendHeader()                  {}
     void sendFooter()                  {}
-    void sendChunk(const char*)        {}
-    void sendContent_P(const char*)    {}
+    void sendChunk(const char* s)      { appendPageBody(s); }
+    void sendContent_P(const char* s)  { appendPageBody(s); }
     bool addPage(const char*, void(*)()) { return true; }
     bool addPage(const char*, const char*, void(*)()) { return true; }
     bool addApi(const char*, void(*)())  { return true; }
@@ -215,12 +227,14 @@ void setUp() {
     g_mock_millis = 0;
     memset(g_pin_mode, 0, sizeof(g_pin_mode));
     memset(g_pin_state, 0, sizeof(g_pin_state));
+    memset(g_pin_write_kind, 0, sizeof(g_pin_write_kind));
     memset(g_pwm_value, 0, sizeof(g_pwm_value));
     g_pwm_freq = 0;
     memset(g_isr_handlers, 0, sizeof(g_isr_handlers));
     g_esp_restart_called = false;
     Esp8266BaseConfig::reset();
     Esp8266BaseSleep::reset();
+    Esp8266BaseWiFi::testSetConnected(true);
     MockWebServer::reset();
 }
 
@@ -415,6 +429,154 @@ void test_ir_set_get_key_code() {
     TEST_ASSERT_EQUAL(0xE01F, code);
 }
 
+// ─── LedIndicator Tests ─────────────────────────────────────────────────────
+
+void test_led_indicator_active_low_gear_brightness() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setGear(0); led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+
+    led.setGear(1); led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(191, g_pwm_value[2]);
+
+    led.setGear(2); led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+
+    led.setGear(3); led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(63, g_pwm_value[2]);
+
+    led.setGear(4); led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(0, g_pwm_value[2]);
+}
+
+void test_led_indicator_pwm_to_off_writes_real_off() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setGear(4); led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(0, g_pwm_value[2]);
+
+    led.setGear(0); led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+}
+
+void test_led_indicator_slow_and_fast_blink_timing() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setOverride(LED_SLOW_BLINK);
+    g_mock_millis = 0; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 999; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 1000; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    g_mock_millis = 1999; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    g_mock_millis = 2000; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+
+    led.setOverride(LED_FAST_BLINK);
+    g_mock_millis = 2199; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 2200; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    g_mock_millis = 2400; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+}
+
+void test_led_indicator_flash_restores_gear_brightness() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setGear(2);
+    led.flashOnce();
+    g_mock_millis = 0; led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    g_mock_millis = 199; led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    g_mock_millis = 200; led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+}
+
+void test_led_indicator_flash_restores_wifi_slow_blink() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setOverride(LED_SLOW_BLINK);
+    led.flashOnce();
+    g_mock_millis = 0; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    g_mock_millis = 200; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 1000; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_led_indicator_flash_duration_zero_disables_feedback() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setGear(2);
+    led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+
+    led.setFlashDuration(0);
+    led.flashOnce();
+    led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+}
+
+void test_led_indicator_flash_duration_2000ms_restores_after_window() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setFlashDuration(2000);
+    TEST_ASSERT_EQUAL(2000, led.getFlashDuration());
+    led.setGear(2);
+    led.flashOnce();
+
+    g_mock_millis = 1999; led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    g_mock_millis = 2000; led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+}
+
+void test_led_indicator_flash_does_not_override_fast_blink() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setOverride(LED_FAST_BLINK);
+    g_mock_millis = 200; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    led.flashOnce();
+    g_mock_millis = 399; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    g_mock_millis = 400; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+}
+
 // ─── FanController Tests ─────────────────────────────────────────────────────
 
 void test_controller_begin() {
@@ -461,6 +623,27 @@ void test_controller_stop() {
 
     ctrl.stop();
     TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
+    TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(0, ctrl.getCurrentGear());
+}
+
+void test_controller_stop_clears_error_state() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 2600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    ctrl.stop();
+    TEST_ASSERT_EQUAL(SYS_IDLE, ctrl.getState());
+    TEST_ASSERT_FALSE(ctrl.isBlocked());
+    TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(0, ctrl.getCurrentGear());
 }
 
 void test_controller_timer() {
@@ -559,6 +742,98 @@ void test_controller_power_on_restore_disabled() {
     ctrl.begin();
     TEST_ASSERT_EQUAL(0, ctrl.getCurrentSpeed());
     TEST_ASSERT_EQUAL(SYS_IDLE, ctrl.getState());
+}
+
+void test_controller_led_flash_duration_defaults_to_200() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    TEST_ASSERT_EQUAL(200, ctrl.getLedFlashDuration());
+    TEST_ASSERT_EQUAL(200, led.getFlashDuration());
+}
+
+void test_controller_led_flash_duration_loads_bounds() {
+    Esp8266BaseConfig::setInt("fan_led_flash_ms", 0);
+    FanDriver fan0(5, 12); ButtonDriver btn0(14, 4);
+    LedIndicator led0(2, true); IRReceiverDriver ir0(13);
+    FanController ctrl0(fan0, btn0, led0, ir0);
+    ctrl0.begin();
+    TEST_ASSERT_EQUAL(0, ctrl0.getLedFlashDuration());
+    TEST_ASSERT_EQUAL(0, led0.getFlashDuration());
+
+    Esp8266BaseConfig::setInt("fan_led_flash_ms", 2000);
+    FanDriver fan1(5, 12); ButtonDriver btn1(14, 4);
+    LedIndicator led1(2, true); IRReceiverDriver ir1(13);
+    FanController ctrl1(fan1, btn1, led1, ir1);
+    ctrl1.begin();
+    TEST_ASSERT_EQUAL(2000, ctrl1.getLedFlashDuration());
+    TEST_ASSERT_EQUAL(2000, led1.getFlashDuration());
+}
+
+void test_controller_led_flash_duration_clamps_config_values() {
+    Esp8266BaseConfig::setInt("fan_led_flash_ms", -1);
+    FanDriver fan0(5, 12); ButtonDriver btn0(14, 4);
+    LedIndicator led0(2, true); IRReceiverDriver ir0(13);
+    FanController ctrl0(fan0, btn0, led0, ir0);
+    ctrl0.begin();
+    TEST_ASSERT_EQUAL(0, ctrl0.getLedFlashDuration());
+
+    Esp8266BaseConfig::setInt("fan_led_flash_ms", 2001);
+    FanDriver fan1(5, 12); ButtonDriver btn1(14, 4);
+    LedIndicator led1(2, true); IRReceiverDriver ir1(13);
+    FanController ctrl1(fan1, btn1, led1, ir1);
+    ctrl1.begin();
+    TEST_ASSERT_EQUAL(2000, ctrl1.getLedFlashDuration());
+}
+
+void test_controller_set_led_flash_duration_clamps_to_2000() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ctrl.setLedFlashDuration(2500);
+    TEST_ASSERT_EQUAL(2000, ctrl.getLedFlashDuration());
+    TEST_ASSERT_EQUAL(2000, led.getFlashDuration());
+    TEST_ASSERT_EQUAL(2000, Esp8266BaseConfig::getInt("fan_led_flash_ms", -1));
+}
+
+void test_controller_auto_restore_disabled_skips_restore_state_writes() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setAutoRestore(false);
+    ctrl.setTimer(1800);
+
+    g_mock_millis = 6000;
+    ctrl.setSpeed(50);
+
+    TEST_ASSERT_EQUAL(-1, Esp8266BaseConfig::getInt("fan_last_speed", -1));
+    TEST_ASSERT_EQUAL(-1, Esp8266BaseConfig::getInt("fan_last_timer", -1));
+}
+
+void test_controller_runtime_state_saved_for_timer_and_stop() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+    fan.setSoftStopTime(0);
+
+    ctrl.setTimer(1800);
+    TEST_ASSERT_EQUAL(1800, Esp8266BaseConfig::getInt("fan_last_timer", -1));
+
+    ctrl.setSpeed(42);
+    TEST_ASSERT_EQUAL(42, Esp8266BaseConfig::getInt("fan_last_speed", -1));
+    TEST_ASSERT_EQUAL(2, ctrl.getCurrentGear());
+
+    ctrl.stop();
+    TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_last_speed", -1));
+    TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_last_timer", -1));
 }
 
 void test_controller_sleep_mode() {
@@ -687,6 +962,172 @@ void test_controller_block_recovery() {
     // Just verify no crash
 }
 
+void test_controller_wifi_disconnected_uses_slow_blink() {
+    Esp8266BaseWiFi::testSetConnected(false);
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    g_mock_millis = 0; ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+
+    g_mock_millis = 1000; ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_wifi_disconnected_overrides_running_gear() {
+    Esp8266BaseWiFi::testSetConnected(false);
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 1000; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_fault_fast_blink_overrides_wifi_and_gear() {
+    Esp8266BaseWiFi::testSetConnected(false);
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 2600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    g_mock_millis = 2800; ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_stop_clears_fault_to_wifi_slow_blink() {
+    Esp8266BaseWiFi::testSetConnected(false);
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 2600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    ctrl.stop();
+    TEST_ASSERT_EQUAL(SYS_IDLE, ctrl.getState());
+    g_mock_millis = 3600; ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    g_mock_millis = 4600; ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_web_speed_operation_flashes_once() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("speed", "50");
+    FanWeb::handleApiSpeed();
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    g_mock_millis = 200; ctrl.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
+}
+
+void test_controller_timer_operation_flashes_once() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ctrl.setTimer(1800);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_button_valid_operation_flashes_once() {
+    g_pin_state[14] = HIGH; g_pin_state[4] = HIGH;
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+
+    g_mock_millis = 100; g_pin_state[14] = LOW; ctrl.tick();
+    g_mock_millis = 160; ctrl.tick();
+    g_mock_millis = 300; g_pin_state[14] = HIGH; ctrl.tick();
+    g_mock_millis = 360; ctrl.tick();
+
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+    TEST_ASSERT_EQUAL(1, ctrl.getCurrentGear());
+}
+
+void test_controller_button_boundary_operation_does_not_flash() {
+    g_pin_state[14] = HIGH; g_pin_state[4] = HIGH;
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+
+    g_mock_millis = 100; g_pin_state[4] = LOW; ctrl.tick();
+    g_mock_millis = 160; ctrl.tick();
+    g_mock_millis = 300; g_pin_state[4] = HIGH; ctrl.tick();
+    g_mock_millis = 360; ctrl.tick();
+
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+    TEST_ASSERT_EQUAL(0, ctrl.getCurrentGear());
+}
+
+void test_controller_ir_timer_operation_flashes_once() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ir.testQueueEvent(IR_EVENT_TIMER_30M);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1800, ctrl.getTimerRemaining());
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_controller_ir_learning_success_flashes_once() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ir.testMarkLearned(IR_KEY_STOP, 1, 0xE01F);
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
 void test_controller_factory_reset() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -797,12 +1238,117 @@ void test_web_api_config_get() {
     ctrl.begin();
     ctrl.setMinEffectiveSpeed(15);
     ctrl.setSleepWaitTime(90);
+    ctrl.setLedFlashDuration(1200);
 
     MockWebServer::setMethod(HTTP_GET);
     FanWeb::handleApiConfig();
     TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"min_effective_speed\":15"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"sleep_wait\":90"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":1200"));
+}
+
+void test_web_api_config_rejects_invalid_values() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("block_detect", "0");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("min_speed", "-1");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("led_flash_ms", "2001");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("led_flash_ms", "-1");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("led_flash_ms", "abc");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+}
+
+void test_web_api_config_save_flashes_once() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("min_speed", "12");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
+void test_web_api_config_led_flash_ms_zero_disables_feedback() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("led_flash_ms", "0");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_EQUAL(0, ctrl.getLedFlashDuration());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":1"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":0"));
+
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+}
+
+void test_web_api_config_led_flash_ms_2000_saves() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("led_flash_ms", "2000");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_EQUAL(2000, ctrl.getLedFlashDuration());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":1"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":2000"));
+}
+
+void test_config_page_contains_led_flash_field() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    FanWeb::handleConfigPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "name=led_flash_ms"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "min=0 max=2000"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "0 disables action feedback flash."));
 }
 
 void test_web_api_ir_learn() {
@@ -861,23 +1407,50 @@ int main() {
     RUN_TEST(test_ir_learning_timeout);
     RUN_TEST(test_ir_set_get_key_code);
 
+    // LedIndicator
+    RUN_TEST(test_led_indicator_active_low_gear_brightness);
+    RUN_TEST(test_led_indicator_pwm_to_off_writes_real_off);
+    RUN_TEST(test_led_indicator_slow_and_fast_blink_timing);
+    RUN_TEST(test_led_indicator_flash_restores_gear_brightness);
+    RUN_TEST(test_led_indicator_flash_restores_wifi_slow_blink);
+    RUN_TEST(test_led_indicator_flash_duration_zero_disables_feedback);
+    RUN_TEST(test_led_indicator_flash_duration_2000ms_restores_after_window);
+    RUN_TEST(test_led_indicator_flash_does_not_override_fast_blink);
+
     // FanController
     RUN_TEST(test_controller_begin);
     RUN_TEST(test_controller_set_speed);
     RUN_TEST(test_controller_min_effective_speed);
     RUN_TEST(test_controller_stop);
+    RUN_TEST(test_controller_stop_clears_error_state);
     RUN_TEST(test_controller_timer);
     RUN_TEST(test_controller_timer_countdown);
     RUN_TEST(test_controller_timer_countdown_while_idle);
     RUN_TEST(test_controller_timer_countdown_while_error);
     RUN_TEST(test_controller_power_on_restore);
     RUN_TEST(test_controller_power_on_restore_disabled);
+    RUN_TEST(test_controller_led_flash_duration_defaults_to_200);
+    RUN_TEST(test_controller_led_flash_duration_loads_bounds);
+    RUN_TEST(test_controller_led_flash_duration_clamps_config_values);
+    RUN_TEST(test_controller_set_led_flash_duration_clamps_to_2000);
+    RUN_TEST(test_controller_auto_restore_disabled_skips_restore_state_writes);
+    RUN_TEST(test_controller_runtime_state_saved_for_timer_and_stop);
     RUN_TEST(test_controller_sleep_mode);
     RUN_TEST(test_controller_wake_from_sleep);
     RUN_TEST(test_controller_run_duration);
     RUN_TEST(test_controller_config_persistence);
     RUN_TEST(test_controller_ir_persistence);
     RUN_TEST(test_controller_block_recovery);
+    RUN_TEST(test_controller_wifi_disconnected_uses_slow_blink);
+    RUN_TEST(test_controller_wifi_disconnected_overrides_running_gear);
+    RUN_TEST(test_controller_fault_fast_blink_overrides_wifi_and_gear);
+    RUN_TEST(test_controller_stop_clears_fault_to_wifi_slow_blink);
+    RUN_TEST(test_controller_web_speed_operation_flashes_once);
+    RUN_TEST(test_controller_timer_operation_flashes_once);
+    RUN_TEST(test_controller_button_valid_operation_flashes_once);
+    RUN_TEST(test_controller_button_boundary_operation_does_not_flash);
+    RUN_TEST(test_controller_ir_timer_operation_flashes_once);
+    RUN_TEST(test_controller_ir_learning_success_flashes_once);
     RUN_TEST(test_controller_factory_reset);
 
     // FanWeb
@@ -887,6 +1460,11 @@ int main() {
     RUN_TEST(test_web_api_timer);
     RUN_TEST(test_web_api_stop);
     RUN_TEST(test_web_api_config_get);
+    RUN_TEST(test_web_api_config_rejects_invalid_values);
+    RUN_TEST(test_web_api_config_save_flashes_once);
+    RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
+    RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);
+    RUN_TEST(test_config_page_contains_led_flash_field);
     RUN_TEST(test_web_api_ir_learn);
     RUN_TEST(test_web_api_ir_status);
 

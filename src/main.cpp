@@ -47,9 +47,7 @@ void setup() {
     Esp8266BaseWeb::setHomePath("/fan");
     Esp8266BaseWeb::setHomeMode(Esp8266BaseWebHomeMode::FUSED_HOME);
     Esp8266BaseWeb::setSystemNavMode(Esp8266BaseWebSystemNavMode::FOOTER_COMPACT);
-    Esp8266BaseWeb::setBuiltinLabel(Esp8266BaseWebBuiltinLabel::HOME, "System");
-    Esp8266BaseWeb::setBuiltinLabel(Esp8266BaseWebBuiltinLabel::AUTH, "Password");
-    Esp8266BaseLog::enableFileSink("/logs/app.log", 16384, ESP8266BASE_LOG_LEVEL, 4);
+    Esp8266BaseLog::enableFileSink("/logs/app.log", 16384, ESP8266BASE_LOG_FILE_LEVEL, 4);
     Esp8266BaseLog::enableConfigAudit(true);
     Esp8266BaseLog::enableConfigReadAudit(true);
     Serial.println(">>> Calling Esp8266Base::begin() <<<");

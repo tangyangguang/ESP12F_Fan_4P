@@ -23,15 +23,14 @@
 │       硬件抽象层（src/fan/）                        │
 │  FanDriver、ButtonDriver、LedIndicator、IRReceiverDriver │
 ├────────────────────────────────────────────────────┤
-│       基础设施层（EspBase 库）                      │
-│  EbWiFi、EbWeb、EbOTA、EbNTP、EbMDNS、EbConfig、    │
-│  EbFileLog、EbScheduler、EbDispatcher、EbWatchdog  │
+│       基础设施层（Esp8266Base 库）                  │
+│  Log、Config、WiFi、Web、OTA、NTP、mDNS、Sleep、WDT │
 └────────────────────────────────────────────────────┘
 ```
 
 **层间规则**：
 - 上层调用下层，下层不得 `#include` 上层头文件
-- 风扇业务模块（fan/）依赖 EspBase，EspBase 不依赖风扇模块
+- 风扇业务模块（fan/）依赖 Esp8266Base，Esp8266Base 不依赖风扇模块
 - Web 层（FanWeb）持有 FanController 引用，属应用级，不可放入 HAL 层
 
 ---
@@ -48,8 +47,9 @@
 | 红外学习模式 | 设备进入学习状态后（10 秒超时），等待用户按下遥控器按键，自动识别协议类型并记录完整编码 |
 | 低功耗休眠 | 风扇停止且无操作超时后进入 Modem Sleep，WiFi 射频周期性休眠但保持连接 |
 | 操作优先级 | 三种控制方式（本地/红外/Web）平等，最后一次操作指令生效 |
-| mDNS 主机名 | `fan-xxxx.local`，xxxx 为 WiFi MAC 地址后四位十六进制字符 |
+| mDNS 主机名 | 默认 `esp-fan.local` |
 | LED PWM 调光 | 板载 LED 通过 PWM 控制亮度，0 档熄灭，1-4 档对应 25%/50%/75%/100% 亮度 |
+| LED 状态优先级 | 故障快闪 > WiFi 未连接慢闪 > 档位亮度/熄灭，操作反馈只做临时覆盖，不清除故障快闪 |
 
 ---
 
@@ -138,10 +138,10 @@ main.cpp (Application)
     │       └── IRReceiverDriver (HAL)
     ├── FanWeb (Application)
     │       └── FanController    ← 持有引用，调用 setSpeed/stop/getStatus 等
-    └── EspBase 模块
-            ├── EbWiFi、EbWeb、EbOTA、EbNTP、EbMDNS
-            ├── EbConfig、EbFileLog、EbScheduler、EbDispatcher
-            └── EbWatchdog、EbStorage
+    └── Esp8266Base 模块
+            ├── Log、Config、WiFi、Web、OTA
+            ├── NTP、mDNS、Sleep、Watchdog
+            └── Storage/LittleFS
 ```
 
 **依赖规则**：
@@ -151,32 +151,36 @@ main.cpp (Application)
 
 ---
 
-## 6. EspBase 模块映射
+## 6. Esp8266Base 模块映射
 
-| 旧项目模块 | EspBase 替代方案 | 说明 |
+| 旧项目模块 | Esp8266Base 替代方案 | 说明 |
 |-----------|------------------|------|
-| WebServer | `EbWeb` + `FanWeb` | EbWeb 提供路由和鉴权，FanWeb 提供风扇专属页面和 API |
-| OtaManager | `EbOTA` | EspBase 内置 OTA 升级能力 |
-| NtpClient | `EbNTP` | EspBase 内置 NTP 时间同步，自动注入时间到 EbLogger |
-| StorageDriver（配置） | `EbConfig` | 命名空间 KV 存储，替代 EEPROM 手动管理 |
-| StorageDriver（日志） | `EbFileLog` + `EbStorage` | 文件日志持久化，自动滚动 |
-| LogManager | `EbFileLog` | 自动记录到文件系统，支持按级别过滤 |
+| WebServer | `Esp8266BaseWeb` + `FanWeb` | Esp8266BaseWeb 提供路由和鉴权，FanWeb 提供风扇专属页面和 API |
+| OtaManager | Esp8266Base 内置 OTA | 局域网 Web OTA 能力由基础库提供 |
+| NtpClient | `Esp8266BaseNTP` | 基础库内置 NTP 时间同步 |
+| MDNS | `Esp8266BaseMDNS` | 提供 `esp-fan.local` 和 `_http._tcp` 广播 |
+| SleepManager | `Esp8266BaseSleep` | 提供 Modem Sleep / Deep Sleep 封装和唤醒原因 |
+| Watchdog | `Esp8266BaseWatchdog` | 主循环活性监控，OTA 上传期间自动 pause/resume |
+| StorageDriver（配置） | `Esp8266BaseConfig` | KV 存储，替代 EEPROM 手动管理 |
+| StorageDriver（日志） | `Esp8266BaseLog` 文件日志 | 文件日志持久化，自动滚动 |
+| LogManager | `Esp8266BaseLog` | 自动记录到文件系统，支持按级别过滤 |
 
 ---
 
 ## 7. 初始化流程
 
-`EspBase::begin()` 自动按依赖顺序初始化所有启用模块（`ESP_BASE_AUTO_BEGIN_OPTIONAL=1`）：
+`Esp8266Base::begin()` 自动按依赖顺序初始化所有启用模块：
 
-1. **核心模块**：Logger, Config, Bus
-2. **非网络模块**：Storage, FileLog, Watchdog, Scheduler, Dispatcher, Sleep
-3. **网络模块**：WiFi（异步连接）
-4. **延迟初始化**：Web, OTA, mDNS 在 WiFi 连接成功后由 `EspBase::handle()` 自动触发
+1. **核心模块**：Log、Sleep、Config
+2. **连接与保护**：WiFi、Watchdog
+3. **Web 与升级**：Web 先注册内置路由，OTA 随后注册 `POST /ota`
+4. **循环处理**：WiFi、Config deferred flush、NTP、mDNS、Web、Watchdog 等由 `Esp8266Base::handle()` 持续推进
 
 **项目代码只需调用**：
 ```cpp
-EspBase::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
-if (!EspBase::begin()) return; // 自动初始化所有模块
+Esp8266Base::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
+Esp8266Base::setHostname("esp-fan");
+Esp8266Base::begin();
 ```
 
 ---
@@ -185,5 +189,5 @@ if (!EspBase::begin()) return; // 自动初始化所有模块
 
 | 库名 | 用途 | 版本 |
 |------|------|------|
-| EspBase | 基础设施库（WiFi/Web/OTA/NTP/日志/配置等） | 本地库 `/Users/tyg/dir/claude_dir/EspBase` |
+| Esp8266Base | 基础设施库（WiFi/Web/OTA/NTP/日志/配置等） | `https://github.com/tangyangguang/Esp8266Base` |
 | IRremoteESP8266 | 红外接收解码，支持 NEC/SONY/RC5/RC6/SAMSUNG 等协议 | PlatformIO 库 `crankyoldgit/IRremoteESP8266@^2.8.6` |

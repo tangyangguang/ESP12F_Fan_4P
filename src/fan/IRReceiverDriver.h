@@ -52,6 +52,11 @@ public:
     uint64_t getLastCode() const;
     uint32_t getLearnedSequence() const;
 
+#ifdef UNIT_TEST
+    void testQueueEvent(IREvent event);
+    void testMarkLearned(uint8_t key_index, uint8_t protocol, uint64_t code);
+#endif
+
 private:
     IREvent matchCode(uint8_t protocol, uint64_t code);
 
@@ -71,6 +76,10 @@ private:
     // Last decoded values
     uint8_t _last_protocol;
     uint64_t _last_code;
+
+#ifdef UNIT_TEST
+    IREvent _test_event;
+#endif
 };
 
 #endif

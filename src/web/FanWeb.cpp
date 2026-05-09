@@ -9,6 +9,24 @@
 FanController* FanWeb::_controller = nullptr;
 IRReceiverDriver* FanWeb::_ir = nullptr;
 
+namespace {
+bool parseUintArg(const String& value, uint32_t min_value, uint32_t max_value, uint32_t* out) {
+    if (out == nullptr || value.length() == 0) return false;
+
+    uint32_t parsed = 0;
+    for (unsigned int i = 0; i < value.length(); i++) {
+        char c = value.c_str()[i];
+        if (c < '0' || c > '9') return false;
+        uint32_t digit = static_cast<uint32_t>(c - '0');
+        if (parsed > (max_value - digit) / 10) return false;
+        parsed = parsed * 10 + digit;
+    }
+    if (parsed < min_value || parsed > max_value) return false;
+    *out = parsed;
+    return true;
+}
+}
+
 FanWeb::FanWeb(FanController& controller, IRReceiverDriver& ir) {
     _controller = &controller;
     _ir = &ir;
@@ -181,6 +199,8 @@ static const char CONFIG_START_END[] PROGMEM = "'><div class=help>Ramp up time.<
 static const char CONFIG_STOP_END[] PROGMEM = "'><div class=help>Ramp down time.</div></div>"
     "<div class=field><label>Block detect (ms)</label><input type=number name=block_detect min=100 max=5000 value='";
 static const char CONFIG_BLOCK_END[] PROGMEM = "'><div class=help>No RPM for this long means blocked.</div></div>"
+    "<div class=field><label>LED flash (ms)</label><input type=number name=led_flash_ms min=0 max=2000 value='";
+static const char CONFIG_LED_FLASH_END[] PROGMEM = "'><div class=help>0 disables action feedback flash.</div></div>"
     "<div class=field><label>Power-on restore</label><select name=auto_restore><option value=1 ";
 static const char CONFIG_AUTO_END[] PROGMEM = ">Enabled</option><option value=0 ";
 static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div class=help>Restore last speed and timer after reboot.</div></div></div>"
@@ -192,7 +212,7 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
     "<script>"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
-    "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.auto_restore.value=d.auto_restore?1:0}"
+    "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{setMsg('Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
     "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),500)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
     "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
@@ -232,6 +252,11 @@ void FanWeb::handleConfigPage() {
     snprintf(buf, sizeof(buf), "%d", _controller->getBlockDetectTime());
     Esp8266BaseWeb::sendChunk(buf);
     Esp8266BaseWeb::sendContent_P(CONFIG_BLOCK_END);
+
+    // LED Flash
+    snprintf(buf, sizeof(buf), "%d", _controller->getLedFlashDuration());
+    Esp8266BaseWeb::sendChunk(buf);
+    Esp8266BaseWeb::sendContent_P(CONFIG_LED_FLASH_END);
 
     // Auto Restore
     Esp8266BaseWeb::sendContent_P(_controller->getAutoRestore() ? "selected" : "");
@@ -291,17 +316,15 @@ void FanWeb::handleApiSpeed() {
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST) {
         String speedStr = server.arg("speed");
-        if (speedStr.length() > 0) {
-            int speed = speedStr.toInt();
-            if (speed >= 0 && speed <= 100) {
-                ESP8266BASE_LOG_I("FanWeb", "user_action speed=%d", speed);
-                _controller->setSpeed(speed);
-                char buf[64];
-                snprintf(buf, sizeof(buf), "{\"ok\":true,\"speed\":%d,\"target_speed\":%d}",
-                         _controller->getCurrentSpeed(), _controller->getTargetSpeed());
-                server.send(200, "application/json", buf);
-                return;
-            }
+        uint32_t speed = 0;
+        if (parseUintArg(speedStr, 0, 100, &speed)) {
+            ESP8266BASE_LOG_I("FanWeb", "user_action speed=%lu", static_cast<unsigned long>(speed));
+            _controller->setSpeed(static_cast<uint8_t>(speed));
+            char buf[64];
+            snprintf(buf, sizeof(buf), "{\"ok\":true,\"speed\":%d,\"target_speed\":%d}",
+                     _controller->getCurrentSpeed(), _controller->getTargetSpeed());
+            server.send(200, "application/json", buf);
+            return;
         }
         ESP8266BASE_LOG_W("FanWeb", "invalid_speed_request value=%s", speedStr.c_str());
         server.send(400, "application/json", "{\"error\":\"invalid request\"}");
@@ -319,17 +342,15 @@ void FanWeb::handleApiTimer() {
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST) {
         String secStr = server.arg("seconds");
-        if (secStr.length() > 0) {
-            unsigned long seconds = secStr.toInt();
-            if (seconds <= 356400) {
-                ESP8266BASE_LOG_I("FanWeb", "user_action timer_seconds=%lu", seconds);
-                _controller->setTimer(seconds);
-                char buf[64];
-                snprintf(buf, sizeof(buf), "{\"ok\":true,\"timer_remaining\":%lu}",
-                         (unsigned long)_controller->getTimerRemaining());
-                server.send(200, "application/json", buf);
-                return;
-            }
+        uint32_t seconds = 0;
+        if (parseUintArg(secStr, 0, 356400, &seconds)) {
+            ESP8266BASE_LOG_I("FanWeb", "user_action timer_seconds=%lu", static_cast<unsigned long>(seconds));
+            _controller->setTimer(seconds);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "{\"ok\":true,\"timer_remaining\":%lu}",
+                     (unsigned long)_controller->getTimerRemaining());
+            server.send(200, "application/json", buf);
+            return;
         }
         ESP8266BASE_LOG_W("FanWeb", "invalid_timer_request seconds=%s", secStr.c_str());
         server.send(400, "application/json", "{\"error\":\"invalid request\"}");
@@ -356,7 +377,12 @@ void FanWeb::handleApiConfig() {
         uint8_t changed = 0;
         // Parse args
         if (server.hasArg("min_speed")) {
-            uint8_t v = server.arg("min_speed").toInt();
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("min_speed"), 0, 50, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid min_speed\"}");
+                return;
+            }
+            uint8_t v = static_cast<uint8_t>(parsed);
             uint8_t old = _controller->getMinEffectiveSpeed();
             if (v != old) {
                 _controller->setMinEffectiveSpeed(v);
@@ -364,7 +390,12 @@ void FanWeb::handleApiConfig() {
             }
         }
         if (server.hasArg("soft_start")) {
-            uint16_t v = server.arg("soft_start").toInt();
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("soft_start"), 0, 10000, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid soft_start\"}");
+                return;
+            }
+            uint16_t v = static_cast<uint16_t>(parsed);
             uint16_t old = _controller->getSoftStartTime();
             if (v != old) {
                 _controller->setSoftStartTime(v);
@@ -372,7 +403,12 @@ void FanWeb::handleApiConfig() {
             }
         }
         if (server.hasArg("soft_stop")) {
-            uint16_t v = server.arg("soft_stop").toInt();
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("soft_stop"), 0, 10000, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid soft_stop\"}");
+                return;
+            }
+            uint16_t v = static_cast<uint16_t>(parsed);
             uint16_t old = _controller->getSoftStopTime();
             if (v != old) {
                 _controller->setSoftStopTime(v);
@@ -380,7 +416,12 @@ void FanWeb::handleApiConfig() {
             }
         }
         if (server.hasArg("block_detect")) {
-            uint16_t v = server.arg("block_detect").toInt();
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("block_detect"), 100, 5000, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid block_detect\"}");
+                return;
+            }
+            uint16_t v = static_cast<uint16_t>(parsed);
             uint16_t old = _controller->getBlockDetectTime();
             if (v != old) {
                 _controller->setBlockDetectTime(v);
@@ -388,15 +429,38 @@ void FanWeb::handleApiConfig() {
             }
         }
         if (server.hasArg("sleep_wait")) {
-            uint16_t v = server.arg("sleep_wait").toInt();
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("sleep_wait"), 0, 3600, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid sleep_wait\"}");
+                return;
+            }
+            uint16_t v = static_cast<uint16_t>(parsed);
             uint16_t old = _controller->getSleepWaitTime();
             if (v != old) {
                 _controller->setSleepWaitTime(v);
                 changed++;
             }
         }
+        if (server.hasArg("led_flash_ms")) {
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("led_flash_ms"), 0, 2000, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid led_flash_ms\"}");
+                return;
+            }
+            uint16_t v = static_cast<uint16_t>(parsed);
+            uint16_t old = _controller->getLedFlashDuration();
+            if (v != old) {
+                _controller->setLedFlashDuration(v);
+                changed++;
+            }
+        }
         if (server.hasArg("auto_restore")) {
-            bool v = server.arg("auto_restore").toInt() != 0;
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("auto_restore"), 0, 1, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid auto_restore\"}");
+                return;
+            }
+            bool v = parsed != 0;
             bool old = _controller->getAutoRestore();
             if (v != old) {
                 _controller->setAutoRestore(v);
@@ -404,12 +468,16 @@ void FanWeb::handleApiConfig() {
             }
         }
         bool flushed = Esp8266BaseConfig::flush();
+        if (flushed) {
+            _controller->notifyUserAction();
+        }
         ESP8266BASE_LOG_I("FanWeb", "config_save_complete changed=%u flushed=%u",
                           (unsigned)changed, flushed ? 1U : 0U);
         char buf[256];
         snprintf(buf, sizeof(buf),
-            "{\"ok\":true,\"changed\":%u,\"flushed\":%s,\"data\":{\"min_effective_speed\":%d,\"soft_start\":%d,\"soft_stop\":%d,"
-            "\"block_detect\":%d,\"sleep_wait\":%d,\"auto_restore\":%s}}",
+            "{\"ok\":%s,\"changed\":%u,\"flushed\":%s,\"data\":{\"min_effective_speed\":%d,\"soft_start\":%d,\"soft_stop\":%d,"
+            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"auto_restore\":%s}}",
+            flushed ? "true" : "false",
             (unsigned)changed,
             flushed ? "true" : "false",
             _controller->getMinEffectiveSpeed(),
@@ -417,19 +485,21 @@ void FanWeb::handleApiConfig() {
             _controller->getSoftStopTime(),
             _controller->getBlockDetectTime(),
             _controller->getSleepWaitTime(),
+            _controller->getLedFlashDuration(),
             _controller->getAutoRestore() ? "true" : "false"
         );
-        server.send(200, "application/json", buf);
+        server.send(flushed ? 200 : 500, "application/json", buf);
     } else {
         char buf[256];
         snprintf(buf, sizeof(buf),
             "{\"ok\":true,\"data\":{\"min_effective_speed\":%d,\"soft_start\":%d,\"soft_stop\":%d,"
-            "\"block_detect\":%d,\"sleep_wait\":%d,\"auto_restore\":%s}}",
+            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"auto_restore\":%s}}",
             _controller->getMinEffectiveSpeed(),
             _controller->getSoftStartTime(),
             _controller->getSoftStopTime(),
             _controller->getBlockDetectTime(),
             _controller->getSleepWaitTime(),
+            _controller->getLedFlashDuration(),
             _controller->getAutoRestore() ? "true" : "false"
         );
         server.send(200, "application/json", buf);
@@ -454,9 +524,9 @@ void FanWeb::handleApiIrLearn() {
 
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST && server.hasArg("key_index")) {
-        int idx = server.arg("key_index").toInt();
-        if (idx >= 0 && idx < 6 && _ir->startLearning(idx)) {
-            ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%d", idx);
+        uint32_t idx = 0;
+        if (parseUintArg(server.arg("key_index"), 0, 5, &idx) && _ir->startLearning(static_cast<uint8_t>(idx))) {
+            ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));
             char buf[96];
             snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu}",
                      (unsigned long)_ir->getLearnedSequence());

@@ -72,6 +72,7 @@ void FanDriver::tick() {
             _current_speed = _target_speed;
             analogWrite(_pwm_pin, _current_speed * 255 / 100);
             _state = FAN_STATE_RUNNING;
+            _block_start_tick = 0;
             ESP8266BASE_LOG_I("FanDrv", "Soft start complete: %d%%", _current_speed);
         }
     } else if (_state == FAN_STATE_SOFT_STOP) {
@@ -132,6 +133,7 @@ bool FanDriver::setSpeed(uint8_t speed) {
             ESP8266BASE_LOG_I("FanDrv", "Stop immediate");
         }
     } else {
+        _block_start_tick = 0;
         if (_current_speed == 0 && _soft_start_time > 0) {
             _state = FAN_STATE_SOFT_START;
             _soft_start_tick = now;
@@ -141,6 +143,7 @@ bool FanDriver::setSpeed(uint8_t speed) {
             _current_speed = speed;
             analogWrite(_pwm_pin, speed * 255 / 100);
             _state = FAN_STATE_RUNNING;
+            _block_start_tick = 0;
             ESP8266BASE_LOG_I("FanDrv", "Speed set: %d%%", speed);
         }
     }

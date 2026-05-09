@@ -13,7 +13,11 @@ IRReceiverDriver::IRReceiverDriver(uint8_t recv_pin)
     , _learned_sequence(0)
     , _ignore_until_tick(0)
     , _last_protocol(0)
-    , _last_code(0) {
+    , _last_code(0)
+#ifdef UNIT_TEST
+    , _test_event(IR_EVENT_NONE)
+#endif
+{
     for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {
         _protocols[i] = 0;
         _codes[i] = 0;
@@ -27,6 +31,14 @@ bool IRReceiverDriver::begin() {
 }
 
 IREvent IRReceiverDriver::getEvent() {
+#ifdef UNIT_TEST
+    if (_test_event != IR_EVENT_NONE) {
+        IREvent event = _test_event;
+        _test_event = IR_EVENT_NONE;
+        return event;
+    }
+#endif
+
     static IRrecv irrecv(_recv_pin, kCaptureBufferSize, kCaptureTimeout, true);
     static bool initialized = false;
 
@@ -161,6 +173,23 @@ uint64_t IRReceiverDriver::getLastCode() const {
 uint32_t IRReceiverDriver::getLearnedSequence() const {
     return _learned_sequence;
 }
+
+#ifdef UNIT_TEST
+void IRReceiverDriver::testQueueEvent(IREvent event) {
+    _test_event = event;
+}
+
+void IRReceiverDriver::testMarkLearned(uint8_t key_index, uint8_t protocol, uint64_t code) {
+    if (key_index >= IR_KEY_COUNT) return;
+    setKeyCode(key_index, protocol, code);
+    _learning_key_index = key_index;
+    _last_protocol = protocol;
+    _last_code = code;
+    _learning = false;
+    _learned_dirty = true;
+    _learned_sequence++;
+}
+#endif
 
 IREvent IRReceiverDriver::matchCode(uint8_t protocol, uint64_t code) {
     for (uint8_t i = 0; i < IR_KEY_COUNT; i++) {

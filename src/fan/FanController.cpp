@@ -28,6 +28,7 @@ const char* KEY_SOFT_STOP = "fan_soft_stop";
 const char* KEY_BLOCK_DETECT = "fan_block_detect";
 const char* KEY_SLEEP_WAIT = "fan_sleep_wait";
 const char* KEY_AUTO_RESTORE = "fan_auto_restore";
+const char* KEY_LED_FLASH_MS = "fan_led_flash_ms";
 const char* KEY_LAST_SPEED = "fan_last_speed";
 const char* KEY_LAST_TIMER = "fan_last_timer";
 const char* KEY_RUN_DURATION = "fan_run_duration";
@@ -69,6 +70,7 @@ FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& le
     , _soft_start_time(1000)
     , _soft_stop_time(1000)
     , _block_detect_time(1500)
+    , _led_flash_duration_ms(200)
     , _min_effective_speed(10)
     , _is_sleeping(false)
     , _sleep_entry_tick(0)
@@ -99,13 +101,7 @@ bool FanController::begin() {
                       static_cast<int>(last_speed), static_cast<long>(last_timer));
             _timer_remaining = static_cast<uint32_t>(last_timer);
             _last_timer_tick = millis();
-            // Calculate gear from speed
-            for (uint8_t g = 0; g < 5; g++) {
-                if (GEAR_SPEED[g] == last_speed) {
-                    _current_gear = g;
-                    break;
-                }
-            }
+            _syncGearFromSpeed(static_cast<uint8_t>(last_speed));
             _applySpeed(static_cast<uint8_t>(last_speed));
         } else {
             ESP8266BASE_LOG_I("FanCtrl", "No restore needed (last_speed=0)");
@@ -114,8 +110,7 @@ bool FanController::begin() {
         ESP8266BASE_LOG_I("FanCtrl", "Auto-restore disabled");
     }
 
-    // Set initial LED state
-    _led.setGear(_current_gear);
+    _updateLedStatus();
 
     ESP8266BASE_LOG_I("FanCtrl", "Controller ready, min_speed=%d%%, auto_restore=%s",
              _min_effective_speed, _auto_restore ? "true" : "false");
@@ -151,7 +146,7 @@ void FanController::tick() {
             break;
     }
 
-    // Update LED every tick
+    _updateLedStatus();
     _led.tick();
 
     // Feed watchdog to prevent Soft WDT reset during heavy operations (e.g. Flash writes)
@@ -181,7 +176,7 @@ void FanController::attemptBlockRecovery() {
     _recovery_start_tick = millis();
 
     if (_target_speed > 0) {
-        _applySpeed(_target_speed);
+        _fan.setSpeed(_target_speed);
         ESP8266BASE_LOG_I("FanCtrl", "Block recovery attempt started (1.5s window)");
     }
 }
@@ -196,14 +191,21 @@ bool FanController::setSpeed(uint8_t speed) {
     }
 
     _target_speed = speed;
-    if (_state == SYS_ERROR) {
-        _fan.resetBlock();
-        _recovery_attempting = false;
-        _led.setOverride(LED_OFF);
-        _state = SYS_IDLE;
-    }
+    _syncGearFromSpeed(speed);
 
-    _applySpeed(speed);
+    if (_state == SYS_ERROR) {
+        if (speed == 0) {
+            return stop();
+        }
+        _fan.resetBlock();
+        _recovery_attempting = true;
+        _recovery_start_tick = millis();
+        _fan.setSpeed(speed);
+        _saveRuntimeState(true);
+    } else {
+        _applySpeed(speed, true);
+    }
+    notifyUserAction();
     ESP8266BASE_LOG_I("FanCtrl", "Speed requested: target=%u output=%u state=%u",
                       (unsigned)_target_speed, (unsigned)_fan.getSpeed(), (unsigned)_state);
     return true;
@@ -217,12 +219,14 @@ bool FanController::setTimer(uint32_t seconds) {
     _last_operation_tick = millis();
     _is_sleeping = false;
     Esp8266BaseSleep::wakeModem();
+    _saveRuntimeState(true);
 
     if (seconds > 0) {
         ESP8266BASE_LOG_I("FanCtrl", "Timer set: %lu seconds", static_cast<unsigned long>(seconds));
     } else {
         ESP8266BASE_LOG_I("FanCtrl", "Timer cancelled");
     }
+    notifyUserAction();
     return true;
 }
 
@@ -232,7 +236,14 @@ bool FanController::stop() {
     Esp8266BaseSleep::wakeModem();
     _timer_remaining = 0;
     _target_speed = 0;
-    _applySpeed(0);
+    _current_gear = 0;
+    _recovery_attempting = false;
+    if (_state == SYS_ERROR || _fan.isBlocked()) {
+        _fan.resetBlock();
+        _state = SYS_IDLE;
+    }
+    _applySpeed(0, true);
+    notifyUserAction();
     ESP8266BASE_LOG_I("FanCtrl", "Fan stopped by request");
     return true;
 }
@@ -243,6 +254,10 @@ bool FanController::resetFactory() {
     }
     ESP.restart();
     return true;
+}
+
+void FanController::notifyUserAction() {
+    _led.flashOnce();
 }
 
 uint8_t FanController::getMinEffectiveSpeed() const { return _min_effective_speed; }
@@ -258,6 +273,7 @@ uint16_t FanController::getSoftStartTime() const {
 }
 
 void FanController::setSoftStartTime(uint16_t ms) {
+    if (ms > 10000) ms = 10000;
     _soft_start_time = ms;
     Esp8266BaseConfig::setInt(KEY_SOFT_START, static_cast<int32_t>(ms));
     _fan.setSoftStartTime(ms);
@@ -268,6 +284,7 @@ uint16_t FanController::getSoftStopTime() const {
 }
 
 void FanController::setSoftStopTime(uint16_t ms) {
+    if (ms > 10000) ms = 10000;
     _soft_stop_time = ms;
     Esp8266BaseConfig::setInt(KEY_SOFT_STOP, static_cast<int32_t>(ms));
     _fan.setSoftStopTime(ms);
@@ -278,6 +295,8 @@ uint16_t FanController::getBlockDetectTime() const {
 }
 
 void FanController::setBlockDetectTime(uint16_t ms) {
+    if (ms < 100) ms = 100;
+    if (ms > 5000) ms = 5000;
     _block_detect_time = ms;
     Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, static_cast<int32_t>(ms));
     _fan.setBlockDetectTime(ms);
@@ -286,8 +305,20 @@ void FanController::setBlockDetectTime(uint16_t ms) {
 uint16_t FanController::getSleepWaitTime() const { return _sleep_wait_time; }
 
 void FanController::setSleepWaitTime(uint16_t seconds) {
+    if (seconds > 3600) seconds = 3600;
     _sleep_wait_time = seconds;
     Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
+}
+
+uint16_t FanController::getLedFlashDuration() const {
+    return _led_flash_duration_ms;
+}
+
+void FanController::setLedFlashDuration(uint16_t ms) {
+    if (ms > 2000) ms = 2000;
+    _led_flash_duration_ms = ms;
+    _led.setFlashDuration(_led_flash_duration_ms);
+    Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
 }
 
 void FanController::_handleInit() { _state = SYS_IDLE; }
@@ -308,12 +339,12 @@ void FanController::_handleRunning() {
     if (now - _last_run_tick >= 1000) {
         _run_duration++;
         _last_run_tick = now;
+        _saveRuntimeState();
     }
 
     if (_fan.isBlocked()) {
         _state = SYS_ERROR;
         ESP8266BASE_LOG_E("FanCtrl", "BLOCK DETECTED! Transitioning to ERROR state");
-        _led.setOverride(LED_FAST_BLINK);
         return;
     }
 
@@ -367,10 +398,8 @@ void FanController::_processButtonEvents() {
                 _current_gear++;
                 uint8_t speed = GEAR_SPEED[_current_gear];
                 setSpeed(speed);
-                _led.setGear(_current_gear);
                 ESP8266BASE_LOG_I("FanCtrl", "Button: Gear up to %d (%d%%)", _current_gear, speed);
             }
-            _led.flashOnce();
             break;
 
         case BTN_DECEL_SHORT:
@@ -378,10 +407,8 @@ void FanController::_processButtonEvents() {
                 _current_gear--;
                 uint8_t speed = GEAR_SPEED[_current_gear];
                 setSpeed(speed);
-                _led.setGear(_current_gear);
                 ESP8266BASE_LOG_I("FanCtrl", "Button: Gear down to %d (%d%%)", _current_gear, speed);
             }
-            _led.flashOnce();
             break;
 
         case BTN_BOTH_LONG:
@@ -399,6 +426,7 @@ void FanController::_processIREvents() {
     if (_ir.consumeLearnedCode()) {
         uint8_t key = _ir.getLearnedKeyIndex();
         _saveIRCode(key);
+        notifyUserAction();
         ESP8266BASE_LOG_I("FanCtrl", "IR learned code persisted key=%u", key);
     }
     if (event == IR_EVENT_NONE) return;
@@ -409,7 +437,6 @@ void FanController::_processIREvents() {
                 _current_gear++;
                 uint8_t speed = GEAR_SPEED[_current_gear];
                 setSpeed(speed);
-                _led.setGear(_current_gear);
                 ESP8266BASE_LOG_I("FanCtrl", "IR: Gear up to %d (%d%%)", _current_gear, speed);
             }
             break;
@@ -419,15 +446,12 @@ void FanController::_processIREvents() {
                 _current_gear--;
                 uint8_t speed = GEAR_SPEED[_current_gear];
                 setSpeed(speed);
-                _led.setGear(_current_gear);
                 ESP8266BASE_LOG_I("FanCtrl", "IR: Gear down to %d (%d%%)", _current_gear, speed);
             }
             break;
 
         case IR_EVENT_STOP:
             stop();
-            _current_gear = 0;
-            _led.setGear(0);
             break;
 
         case IR_EVENT_TIMER_30M:
@@ -461,12 +485,11 @@ void FanController::_processTimer() {
 
         if (_timer_remaining == 0) {
             stop();
-            _current_gear = 0;
-            _led.setGear(0);
             ESP8266BASE_LOG_I("FanCtrl", "Timer expired, fan stopped");
         } else if (_timer_remaining <= 60 && _timer_remaining % 10 == 0) {
             ESP8266BASE_LOG_D("FanCtrl", "Timer remaining: %lus", static_cast<unsigned long>(_timer_remaining));
         }
+        _saveRuntimeState();
     }
 }
 
@@ -497,41 +520,80 @@ void FanController::_processSleep() {
     }
 }
 
-bool FanController::_applySpeed(uint8_t speed) {
+bool FanController::_applySpeed(uint8_t speed, bool force_save) {
     bool ok = _fan.setSpeed(speed);
     if (ok) {
         if (speed > 0) {
             _state = SYS_RUNNING;
             _last_run_tick = millis();
         }
-        _saveRuntimeState();
+        _saveRuntimeState(force_save);
     }
     return ok;
 }
 
-void FanController::_saveRuntimeState() {
+void FanController::_saveRuntimeState(bool force) {
     static uint32_t last_save = 0;
     uint32_t now = millis();
 
     // Throttle Flash writes: max once every 5 seconds.
-    if (now - last_save < 5000) return;
+    if (!force && now - last_save < 5000) return;
     last_save = now;
 
-    Esp8266BaseConfig::setIntDeferred(KEY_LAST_SPEED, _fan.getSpeed());
-    Esp8266BaseConfig::setIntDeferred(KEY_LAST_TIMER, static_cast<int32_t>(_timer_remaining));
+    if (_auto_restore) {
+        Esp8266BaseConfig::setIntDeferred(KEY_LAST_SPEED, _target_speed);
+        Esp8266BaseConfig::setIntDeferred(KEY_LAST_TIMER, static_cast<int32_t>(_timer_remaining));
+    }
     Esp8266BaseConfig::setIntDeferred(KEY_RUN_DURATION, static_cast<int32_t>(_run_duration));
+}
+
+void FanController::_syncGearFromSpeed(uint8_t speed) {
+    if (speed == 0) {
+        _current_gear = 0;
+    } else if (speed <= GEAR_SPEED[1]) {
+        _current_gear = 1;
+    } else if (speed <= GEAR_SPEED[2]) {
+        _current_gear = 2;
+    } else if (speed <= GEAR_SPEED[3]) {
+        _current_gear = 3;
+    } else {
+        _current_gear = 4;
+    }
+}
+
+void FanController::_updateLedStatus() {
+    if (_state == SYS_ERROR || _fan.isBlocked()) {
+        _led.setOverride(LED_FAST_BLINK);
+    } else if (!Esp8266BaseWiFi::isConnected()) {
+        _led.setOverride(LED_SLOW_BLINK);
+    } else {
+        _led.setGear(_current_gear);
+    }
 }
 
 void FanController::_loadConfig() {
     _min_effective_speed = static_cast<uint8_t>(
         Esp8266BaseConfig::getInt(KEY_MIN_SPEED, 10));
+    if (_min_effective_speed > 50) _min_effective_speed = 50;
     _sleep_wait_time = static_cast<uint16_t>(
         Esp8266BaseConfig::getInt(KEY_SLEEP_WAIT, 60));
+    if (_sleep_wait_time > 3600) _sleep_wait_time = 3600;
     _auto_restore = Esp8266BaseConfig::getBool(KEY_AUTO_RESTORE, true);
+    int32_t led_flash_ms = Esp8266BaseConfig::getInt(KEY_LED_FLASH_MS, 200);
+    if (led_flash_ms < 0) led_flash_ms = 0;
+    if (led_flash_ms > 2000) led_flash_ms = 2000;
+    _led_flash_duration_ms = static_cast<uint16_t>(led_flash_ms);
+    _led.setFlashDuration(_led_flash_duration_ms);
 
     int32_t soft_start = Esp8266BaseConfig::getInt(KEY_SOFT_START, 1000);
     int32_t soft_stop = Esp8266BaseConfig::getInt(KEY_SOFT_STOP, 1000);
     int32_t block_detect = Esp8266BaseConfig::getInt(KEY_BLOCK_DETECT, 1500);
+    if (soft_start < 0) soft_start = 0;
+    if (soft_start > 10000) soft_start = 10000;
+    if (soft_stop < 0) soft_stop = 0;
+    if (soft_stop > 10000) soft_stop = 10000;
+    if (block_detect < 100) block_detect = 100;
+    if (block_detect > 5000) block_detect = 5000;
 
     _soft_start_time = static_cast<uint16_t>(soft_start);
     _soft_stop_time = static_cast<uint16_t>(soft_stop);
@@ -564,6 +626,7 @@ void FanController::_saveConfig() {
     Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, _block_detect_time);
     Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
+    Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
 }
 
 void FanController::_saveIRCode(uint8_t key_index) {

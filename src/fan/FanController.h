@@ -38,6 +38,7 @@ public:
     bool setTimer(uint32_t seconds);
     bool stop();
     bool resetFactory();
+    void notifyUserAction();
 
     // Configuration getters/setters
     uint8_t getMinEffectiveSpeed() const;
@@ -52,6 +53,8 @@ public:
     void setSleepWaitTime(uint16_t seconds);
     bool getAutoRestore() const;
     void setAutoRestore(bool enable);
+    uint16_t getLedFlashDuration() const;
+    void setLedFlashDuration(uint16_t ms);
 
     // Block recovery
     void attemptBlockRecovery();
@@ -68,8 +71,10 @@ private:
     void _processTimer();
     void _processSleep();
 
-    bool _applySpeed(uint8_t speed);
-    void _saveRuntimeState();
+    bool _applySpeed(uint8_t speed, bool force_save = false);
+    void _saveRuntimeState(bool force = false);
+    void _syncGearFromSpeed(uint8_t speed);
+    void _updateLedStatus();
     void _loadConfig();
     void _saveConfig();
     void _saveIRCode(uint8_t key_index);
@@ -96,6 +101,7 @@ public:
     uint16_t _soft_start_time;
     uint16_t _soft_stop_time;
     uint16_t _block_detect_time;
+    uint16_t _led_flash_duration_ms;
     uint8_t _min_effective_speed;
 
     bool _is_sleeping;

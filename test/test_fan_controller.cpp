@@ -543,6 +543,41 @@ void test_led_indicator_flash_restores_gear_brightness() {
     TEST_ASSERT_EQUAL(127, g_pwm_value[2]);
 }
 
+void test_led_indicator_flash_inverts_full_brightness() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setGear(4);
+    led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(0, g_pwm_value[2]);
+
+    led.flashOnce();
+    g_mock_millis = 0; led.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+
+    g_mock_millis = 200; led.tick();
+    TEST_ASSERT_EQUAL(2, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(0, g_pwm_value[2]);
+}
+
+void test_led_indicator_flash_inverts_slow_blink_on_phase() {
+    LedIndicator led(2, true);
+    led.begin();
+
+    led.setOverride(LED_SLOW_BLINK);
+    g_mock_millis = 500; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+
+    led.flashOnce();
+    g_mock_millis = 501; led.tick();
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+
+    g_mock_millis = 701; led.tick();
+    TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
+}
+
 void test_led_indicator_flash_restores_wifi_slow_blink() {
     LedIndicator led(2, true);
     led.begin();
@@ -1594,6 +1629,8 @@ int main() {
     RUN_TEST(test_led_indicator_pwm_to_off_writes_real_off);
     RUN_TEST(test_led_indicator_slow_and_fast_blink_timing);
     RUN_TEST(test_led_indicator_flash_restores_gear_brightness);
+    RUN_TEST(test_led_indicator_flash_inverts_full_brightness);
+    RUN_TEST(test_led_indicator_flash_inverts_slow_blink_on_phase);
     RUN_TEST(test_led_indicator_flash_restores_wifi_slow_blink);
     RUN_TEST(test_led_indicator_flash_duration_zero_disables_feedback);
     RUN_TEST(test_led_indicator_flash_duration_2000ms_restores_after_window);

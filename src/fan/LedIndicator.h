@@ -38,6 +38,8 @@ private:
     bool _blink_state;
     uint32_t _flash_start;
     bool _flash_active;
+    bool _flash_output_on;
+    bool _output_on;
     uint16_t _flash_duration_ms;
 
     static const uint32_t SLOW_BLINK_INTERVAL = 500;   // 1Hz full cycle

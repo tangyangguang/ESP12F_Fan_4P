@@ -12,6 +12,8 @@ LedIndicator::LedIndicator(uint8_t pin, bool active_low)
     , _blink_state(false)
     , _flash_start(0)
     , _flash_active(false)
+    , _flash_output_on(false)
+    , _output_on(false)
     , _flash_duration_ms(DEFAULT_FLASH_DURATION) {
 }
 
@@ -66,6 +68,7 @@ void LedIndicator::flashOnce() {
     if (_flash_duration_ms == 0) return;
     if (_base_mode == LED_FAST_BLINK) return;
     _flash_start = millis();
+    _flash_output_on = !_output_on;
     _flash_active = true;
 }
 
@@ -73,7 +76,7 @@ void LedIndicator::update() {
     uint32_t now = millis();
     if (_flash_active && _base_mode != LED_FAST_BLINK) {
         if (now - _flash_start < _flash_duration_ms) {
-            writeDigital(true);
+            writeDigital(_flash_output_on);
             return;
         }
         _flash_active = false;
@@ -116,6 +119,7 @@ void LedIndicator::update() {
 }
 
 void LedIndicator::writeDigital(bool on) {
+    _output_on = on;
     digitalWrite(_pin, _active_low ? (on ? LOW : HIGH) : (on ? HIGH : LOW));
 }
 
@@ -125,6 +129,7 @@ void LedIndicator::writeBrightness(uint8_t brightness) {
         return;
     }
 
+    _output_on = true;
     analogWrite(_pin, _active_low ? static_cast<uint8_t>(255 - brightness) : brightness);
 }
 

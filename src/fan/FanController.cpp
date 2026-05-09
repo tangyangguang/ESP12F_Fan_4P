@@ -66,6 +66,7 @@ FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& le
     , _run_duration(0)
     , _last_run_tick(0)
     , _last_operation_tick(0)
+    , _last_runtime_save_tick(0)
     , _sleep_wait_time(60)
     , _soft_start_time(1000)
     , _soft_stop_time(1000)
@@ -166,19 +167,6 @@ bool FanController::getAutoRestore() const { return _auto_restore; }
 void FanController::setAutoRestore(bool enable) {
     _auto_restore = enable;
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
-}
-
-void FanController::attemptBlockRecovery() {
-    if (_state != SYS_ERROR) return;
-
-    _fan.resetBlock();
-    _recovery_attempting = true;
-    _recovery_start_tick = millis();
-
-    if (_target_speed > 0) {
-        _fan.setSpeed(_target_speed);
-        ESP8266BASE_LOG_I("FanCtrl", "Block recovery attempt started (1.5s window)");
-    }
 }
 
 bool FanController::setSpeed(uint8_t speed) {
@@ -545,12 +533,11 @@ bool FanController::_applySpeed(uint8_t speed, bool force_save) {
 }
 
 void FanController::_saveRuntimeState(bool force) {
-    static uint32_t last_save = 0;
     uint32_t now = millis();
 
     // Throttle Flash writes: max once every 5 seconds.
-    if (!force && now - last_save < 5000) return;
-    last_save = now;
+    if (!force && now - _last_runtime_save_tick < 5000) return;
+    _last_runtime_save_tick = now;
 
     if (_auto_restore) {
         Esp8266BaseConfig::setIntDeferred(KEY_LAST_SPEED, _target_speed);
@@ -632,16 +619,6 @@ void FanController::_loadConfig() {
     }
 }
 
-void FanController::_saveConfig() {
-    Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
-    Esp8266BaseConfig::setInt(KEY_SOFT_START, _soft_start_time);
-    Esp8266BaseConfig::setInt(KEY_SOFT_STOP, _soft_stop_time);
-    Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, _block_detect_time);
-    Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
-    Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
-    Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
-}
-
 void FanController::_saveIRCode(uint8_t key_index) {
     if (key_index >= IR_KEY_COUNT) return;
 
@@ -655,11 +632,27 @@ void FanController::_saveIRCode(uint8_t key_index) {
     char current[32];
     snprintf(key, sizeof(key), "%s%d", KEY_IR_ENTRY, key_index);
     snprintf(value, sizeof(value), "%u:%016llX", proto, static_cast<unsigned long long>(code));
-    if (Esp8266BaseConfig::getStr(key, current, sizeof(current), "") && strcmp(current, value) == 0) {
-        ESP8266BASE_LOG_I("FanCtrl", "IR learned code unchanged key=%u", key_index);
-        return;
+    if (Esp8266BaseConfig::getStr(key, current, sizeof(current), "")) {
+        uint8_t currentProto = 0;
+        uint64_t currentCode = 0;
+        if (parseIRCodeEntry(current, &currentProto, &currentCode) &&
+            currentProto == proto && currentCode == code) {
+            ESP8266BASE_LOG_I("FanCtrl", "IR learned code unchanged key=%u", key_index);
+            return;
+        }
     }
     Esp8266BaseConfig::setStr(key, value);
+}
+
+#ifdef UNIT_TEST
+void FanController::_saveConfig() {
+    Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
+    Esp8266BaseConfig::setInt(KEY_SOFT_START, _soft_start_time);
+    Esp8266BaseConfig::setInt(KEY_SOFT_STOP, _soft_stop_time);
+    Esp8266BaseConfig::setInt(KEY_BLOCK_DETECT, _block_detect_time);
+    Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
+    Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
+    Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
 }
 
 void FanController::_saveIRCodes() {
@@ -667,3 +660,4 @@ void FanController::_saveIRCodes() {
         _saveIRCode(i);
     }
 }
+#endif

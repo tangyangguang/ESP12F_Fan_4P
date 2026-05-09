@@ -109,8 +109,8 @@ void LedIndicator::update() {
             writeDigital(_blink_state);
             break;
 
-        case LED_SINGLE_FLASH:
-            flashOnce();
+        default:
+            writeDigital(false);
             break;
     }
 }

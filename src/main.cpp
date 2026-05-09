@@ -29,8 +29,13 @@ static FanWeb fanWeb(fanController, irDriver);
 
 // ─── BOOT button: hold 1s to clear WiFi credentials ─────────────────────────
 static const uint32_t PRESS_DURATION_MS = 1000;
+static const uint32_t BOOT_DEBOUNCE_MS = 50;
 static uint32_t pressStartTime = 0;
+static uint32_t lastBootRawChange = 0;
+static bool lastBootRawState = HIGH;
+static bool stableBootState = HIGH;
 static bool isPressed = false;
+static bool bootActionTriggered = false;
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +43,7 @@ void setup() {
     // Debug serial
     Serial.begin(115200);
     Serial.println("\n>>> BOOT STARTED <<<");
+    pinMode(BOOT_PIN, INPUT_PULLUP);
 
     // Firmware identification & Hostname
     Esp8266Base::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
@@ -86,16 +92,29 @@ void loop() {
 
     // ─── BOOT button: hold 1s to clear WiFi credentials ────────────────────
     bool currentState = digitalRead(BOOT_PIN);
-    if (currentState == LOW && !isPressed) {
-        pressStartTime = millis();
-        isPressed = true;
-    } else if (currentState == HIGH && isPressed) {
-        isPressed = false;
-    } else if (currentState == LOW && isPressed && (millis() - pressStartTime >= PRESS_DURATION_MS)) {
+    uint32_t now = millis();
+    if (currentState != lastBootRawState) {
+        lastBootRawState = currentState;
+        lastBootRawChange = now;
+    }
+    if (now - lastBootRawChange >= BOOT_DEBOUNCE_MS && currentState != stableBootState) {
+        stableBootState = currentState;
+        if (stableBootState == LOW) {
+            pressStartTime = now;
+            isPressed = true;
+            bootActionTriggered = false;
+        } else {
+            isPressed = false;
+            bootActionTriggered = false;
+        }
+    }
+    if (stableBootState == LOW && isPressed && !bootActionTriggered &&
+        (now - pressStartTime >= PRESS_DURATION_MS)) {
+        bootActionTriggered = true;
         ESP8266BASE_LOG_I("Main", "Button held 1s, clearing WiFi credentials");
         Esp8266BaseConfig::flush(); // Ensure pending writes are saved
         Esp8266BaseWiFi::clearCredentials();
-        delay(500);
+        Esp8266BaseConfig::flush();
         ESP.restart();
     }
 

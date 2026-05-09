@@ -17,6 +17,8 @@ static uint32_t g_mock_millis = 0;
 uint32_t millis() { return g_mock_millis; }
 void yield() {}
 void delay(uint32_t ms) { g_mock_millis += ms; }
+void noInterrupts() {}
+void interrupts() {}
 
 static uint8_t g_pin_mode[20]  = {0};
 static uint8_t g_pin_state[20] = {0};
@@ -389,6 +391,34 @@ void test_button_both_long_press() {
     g_mock_millis = 5300;
     ButtonEvent evt = btn.getEvent();
     TEST_ASSERT_EQUAL(BTN_BOTH_LONG, evt);
+}
+
+void test_button_both_long_requires_full_release_before_new_short_press() {
+    g_pin_state[14] = HIGH; g_pin_state[4] = HIGH;
+    ButtonDriver btn(14, 4);
+    btn.begin();
+    g_mock_millis = 0; btn.getEvent();
+
+    g_mock_millis = 100; g_pin_state[14] = LOW; btn.getEvent();
+    g_mock_millis = 110; g_pin_state[4] = LOW; btn.getEvent();
+    g_mock_millis = 200; btn.getEvent();
+    g_mock_millis = 5300;
+    TEST_ASSERT_EQUAL(BTN_BOTH_LONG, btn.getEvent());
+
+    g_mock_millis = 5400; g_pin_state[4] = HIGH; btn.getEvent();
+    g_mock_millis = 5460; TEST_ASSERT_EQUAL(BTN_NONE, btn.getEvent());
+    g_mock_millis = 5600; g_pin_state[4] = LOW; btn.getEvent();
+    g_mock_millis = 5660; TEST_ASSERT_EQUAL(BTN_NONE, btn.getEvent());
+    g_mock_millis = 5800; g_pin_state[4] = HIGH; btn.getEvent();
+    g_mock_millis = 5860; TEST_ASSERT_EQUAL(BTN_NONE, btn.getEvent());
+
+    g_mock_millis = 6000; g_pin_state[14] = HIGH; btn.getEvent();
+    g_mock_millis = 6060; TEST_ASSERT_EQUAL(BTN_NONE, btn.getEvent());
+
+    g_mock_millis = 6200; g_pin_state[4] = LOW; btn.getEvent();
+    g_mock_millis = 6260; btn.getEvent();
+    g_mock_millis = 6400; g_pin_state[4] = HIGH; btn.getEvent();
+    g_mock_millis = 6460; TEST_ASSERT_EQUAL(BTN_DECEL_SHORT, btn.getEvent());
 }
 
 // ─── IRReceiverDriver Tests ──────────────────────────────────────────────────
@@ -1022,24 +1052,70 @@ void test_controller_ir_persistence() {
     TEST_ASSERT_EQUAL(0xE01F, c);
 }
 
-void test_controller_block_recovery() {
+void test_controller_ir_persistence_keeps_equivalent_existing_format() {
+    Esp8266BaseConfig::setStr("fan_ir_key_0", "1:E01F");
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
     FanController ctrl(fan, btn, led, ir);
     ctrl.begin();
+
+    ir.setKeyCode(0, 1, 0xE01F);
+    ctrl.testSaveConfig();
+
+    char value[32];
+    TEST_ASSERT_TRUE(Esp8266BaseConfig::getStr("fan_ir_key_0", value, sizeof(value), ""));
+    TEST_ASSERT_EQUAL_STRING("1:E01F", value);
+}
+
+void test_controller_block_recovery_failure_stays_error() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setSoftStartTime(0);
     ctrl.setBlockDetectTime(500);
 
     ctrl.setSpeed(50);
-    g_mock_millis = 2000; ctrl.tick();
+    g_mock_millis = 600; ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
 
-    g_mock_millis = 2600; ctrl.tick();
+    g_mock_millis = 1200; ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
 
     ctrl.setSpeed(50);  // triggers recovery attempt
-    g_mock_millis = 4200; ctrl.tick();
-    // Recovery outcome depends on whether tach fires; here it won't, stays in error
-    // Just verify no crash
+    g_mock_millis = 2700; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+    TEST_ASSERT_FALSE(fan.isBlocked());
+}
+
+void test_controller_block_recovery_success_returns_to_running() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setSoftStartTime(0);
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    g_mock_millis = 1200; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    ctrl.setSpeed(50);
+    for (uint8_t i = 0; i < 20; i++) {
+        if (g_isr_handlers[12] != nullptr) g_isr_handlers[12]();
+    }
+    g_mock_millis = 1800; ctrl.tick();
+    TEST_ASSERT_TRUE(fan.getRpm() > 0);
+    for (uint8_t i = 0; i < 20; i++) {
+        if (g_isr_handlers[12] != nullptr) g_isr_handlers[12]();
+    }
+    g_mock_millis = 2300; ctrl.tick();
+    TEST_ASSERT_TRUE(fan.getRpm() > 0);
+    g_mock_millis = 2700; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    TEST_ASSERT_FALSE(fan.isBlocked());
 }
 
 void test_controller_wifi_disconnected_uses_slow_blink() {
@@ -1399,6 +1475,24 @@ void test_web_api_config_save_flashes_once() {
     TEST_ASSERT_EQUAL(LOW, g_pin_state[2]);
 }
 
+void test_web_api_config_no_change_does_not_flash() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("min_speed", "10");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":0"));
+
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
+    TEST_ASSERT_EQUAL(HIGH, g_pin_state[2]);
+}
+
 void test_web_api_config_led_flash_ms_zero_disables_feedback() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1463,21 +1557,6 @@ void test_web_api_ir_learn() {
     TEST_ASSERT_EQUAL(2, ir.getLearnedKeyIndex());
 }
 
-void test_web_api_ir_status() {
-    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
-    LedIndicator led(2, true); IRReceiverDriver ir(13);
-    FanController ctrl(fan, btn, led, ir);
-    FanWeb web(ctrl, ir);
-    ctrl.begin();
-    ir.setKeyCode(0, 1, 0xE01F);
-
-    MockWebServer::setMethod(HTTP_GET);
-    FanWeb::handleApiIrStatus();
-    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
-    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"ok\":true"));
-    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "0x0000E01F"));  // %08llX pads to 8 hex digits
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -1497,6 +1576,7 @@ int main() {
     RUN_TEST(test_button_accel_short_press);
     RUN_TEST(test_button_decel_short_press);
     RUN_TEST(test_button_both_long_press);
+    RUN_TEST(test_button_both_long_requires_full_release_before_new_short_press);
 
     // IRReceiverDriver
     RUN_TEST(test_ir_driver_begin);
@@ -1542,7 +1622,9 @@ int main() {
     RUN_TEST(test_controller_run_duration);
     RUN_TEST(test_controller_config_persistence);
     RUN_TEST(test_controller_ir_persistence);
-    RUN_TEST(test_controller_block_recovery);
+    RUN_TEST(test_controller_ir_persistence_keeps_equivalent_existing_format);
+    RUN_TEST(test_controller_block_recovery_failure_stays_error);
+    RUN_TEST(test_controller_block_recovery_success_returns_to_running);
     RUN_TEST(test_controller_wifi_disconnected_uses_slow_blink);
     RUN_TEST(test_controller_wifi_disconnected_overrides_running_gear);
     RUN_TEST(test_controller_fault_fast_blink_overrides_wifi_and_gear);
@@ -1565,11 +1647,11 @@ int main() {
     RUN_TEST(test_web_api_config_rejects_invalid_values);
     RUN_TEST(test_web_api_config_rejects_without_partial_apply);
     RUN_TEST(test_web_api_config_save_flashes_once);
+    RUN_TEST(test_web_api_config_no_change_does_not_flash);
     RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
     RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);
     RUN_TEST(test_config_page_contains_led_flash_field);
     RUN_TEST(test_web_api_ir_learn);
-    RUN_TEST(test_web_api_ir_status);
 
     return UNITY_END();
 }

@@ -56,9 +56,6 @@ public:
     uint16_t getLedFlashDuration() const;
     void setLedFlashDuration(uint16_t ms);
 
-    // Block recovery
-    void attemptBlockRecovery();
-
 private:
     void _handleInit();
     void _handleIdle();
@@ -76,9 +73,12 @@ private:
     void _syncGearFromSpeed(uint8_t speed);
     void _updateLedStatus();
     void _loadConfig();
-    void _saveConfig();
     void _saveIRCode(uint8_t key_index);
+
+#ifdef UNIT_TEST
+    void _saveConfig();
     void _saveIRCodes();
+#endif
 
 #ifdef UNIT_TEST
 public:
@@ -97,6 +97,7 @@ public:
     uint32_t _run_duration;
     uint32_t _last_run_tick;
     uint32_t _last_operation_tick;
+    uint32_t _last_runtime_save_tick;
     uint16_t _sleep_wait_time;
     uint16_t _soft_start_time;
     uint16_t _soft_stop_time;

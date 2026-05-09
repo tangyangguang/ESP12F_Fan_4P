@@ -46,14 +46,17 @@ void FanDriver::tick() {
     // Update RPM (calculate every 500ms)
     if (now - _last_rpm_update_ms >= 500) {
         uint32_t elapsed = now - _last_tach_ms;
-        if (elapsed > 0 && _tach_count > 0) {
+        noInterrupts();
+        uint32_t tach_count = _tach_count;
+        _tach_count = 0;
+        interrupts();
+        if (elapsed > 0 && tach_count > 0) {
             // RPM = (pulses / 2) * (60000 / elapsed_ms)
             // Assuming 2 pulses per revolution for typical 4-wire fans
-            _rpm = static_cast<uint16_t>((_tach_count * 30000UL) / elapsed);
+            _rpm = static_cast<uint16_t>((tach_count * 30000UL) / elapsed);
         } else {
             _rpm = 0;
         }
-        _tach_count = 0;
         _last_tach_ms = now;
         _last_rpm_update_ms = now;
     }

@@ -49,6 +49,8 @@ void attachInterrupt(uint8_t pin, void (*handler)(), int mode);
 void detachInterrupt(uint8_t pin);
 uint8_t digitalPinToInterrupt(uint8_t pin);
 uint32_t millis();
+void noInterrupts();
+void interrupts();
 void yield();
 void delay(uint32_t ms);
 

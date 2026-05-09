@@ -171,7 +171,7 @@ public:
 - 操作反馈时长默认 200ms，通过 `fan_led_flash_ms` 配置为 0-2000ms；0 表示关闭操作反馈闪烁。
 - `FanController` 每个 tick 在业务状态机处理完成后统一调用 LED 决策，再执行 `_led.tick()`。
 - LED 优先级固定为：`SYS_ERROR` 或堵转时快闪 > WiFi 未连接慢闪 > 当前档位亮度/熄灭。
-- 所有有效用户操作闪 1 下：Web 调速/停止/定时/配置保存、按键有效加减档、IR 有效操作、红外学习成功。非法 API 参数、边界重复加减档、未知红外码、学习超时不闪。
+- 所有有效用户操作闪 1 下：Web 调速/停止/定时/配置保存且有变化、按键有效加减档、IR 有效操作、红外学习成功。非法 API 参数、配置无变化、边界重复加减档、未知红外码、学习超时不闪。
 - 故障恢复期间保持快闪；`setSpeed()` 在故障态只发起恢复尝试，恢复成功后回到普通 LED 规则，恢复失败继续快闪；`stop()` 清除故障后回到 WiFi 慢闪或 0 档熄灭。
 
 ### 3.4 IRReceiverDriver（HAL 层）
@@ -224,14 +224,34 @@ public:
     SystemState getState() const;
     uint8_t getCurrentGear() const;
     uint8_t getCurrentSpeed() const;
+    uint8_t getTargetSpeed() const;
     uint32_t getTimerRemaining() const;
     uint32_t getTotalRunDuration() const;
     bool isBlocked() const;
+    bool isSleeping() const;
 
     // 外部指令接口，供 Web/其他模块调用
     bool setSpeed(uint8_t speed);
     bool setTimer(uint32_t seconds);
     bool stop();
+    bool resetFactory();
+    void notifyUserAction();
+
+    // 配置接口
+    uint8_t getMinEffectiveSpeed() const;
+    void setMinEffectiveSpeed(uint8_t speed);
+    uint16_t getSoftStartTime() const;
+    void setSoftStartTime(uint16_t ms);
+    uint16_t getSoftStopTime() const;
+    void setSoftStopTime(uint16_t ms);
+    uint16_t getBlockDetectTime() const;
+    void setBlockDetectTime(uint16_t ms);
+    uint16_t getSleepWaitTime() const;
+    void setSleepWaitTime(uint16_t seconds);
+    uint16_t getLedFlashDuration() const;
+    void setLedFlashDuration(uint16_t ms);
+    bool getAutoRestore() const;
+    void setAutoRestore(bool enable);
 
 private:
     void _handleInit();
@@ -243,7 +263,7 @@ private:
     void _processIREvents();
     void _processTimer();
     void _processSleep();
-    void _saveRuntimeState();
+    void _saveRuntimeState(bool force = false);
 };
 ```
 
@@ -299,19 +319,20 @@ private:
 
 ```
 ┌─────────────────────────────────────┐
-│  壁炉烟囱正压送风控制器              │
+│  Fan                                │
 ├─────────────────────────────────────┤
-│  当前档位：2 档                      │
-│  当前转速：50%                       │
-│  运行状态：运行中                    │
-│  定时剩余：30 分钟                   │
-│  累计运行时长：12 小时 35 分         │
+│  Target: 50%                        │
+│  Output: 50%                        │
+│  State: Running                     │
+│  Timer: 30m 0s                      │
+│  Run time: 12 h                     │
 ├─────────────────────────────────────┤
-│  WiFi：已连接 | 信号：-65 dBm       │
+│  RSSI: -65 dBm                      │
 │  IP：192.168.1.100                  │
-│  NTP：已同步 | 当前时间：2026-04-30  │
+│  Clock: 2026-05-09 12:00:00         │
 ├─────────────────────────────────────┤
-│  [调速滑块] [停止] [定时设置]        │
+│  [Off] [25] [50] [75] [100]         │
+│  [Apply] [Set] [Cancel] [Stop fan]  │
 └─────────────────────────────────────┘
 ```
 
@@ -343,7 +364,7 @@ private:
 
 | 命名空间 | 用途 | 键数量 |
 |----------|------|--------|
-| `fan` | 风扇配置和运行时状态 | 20 个 |
+| `fan` | 风扇配置、运行时状态、红外学习码 | 当前 16 个：7 个配置键、3 个运行时键、6 个红外码键 |
 | Esp8266Base 内置键 | WiFi 凭证、Web 密码等基础库配置 | 由基础库管理 |
 
 ### 6.3 版本迁移策略
@@ -352,7 +373,7 @@ private:
 - 版本一致：正常加载所有配置
 - 版本不一致：加载所有默认配置，记录告警日志，保留用户 WiFi 配置
 - 读取失败（首次烧录/Flash 损坏）：写入所有默认配置，进入 AP 配网模式
-- 出厂重置时：清除 `fan` 命名空间所有配置，恢复默认值
+- 出厂重置时：当前通过 Esp8266Base `clearAll()` 清空所有 KV，包括风扇配置、WiFi 凭证和 Web 密码
 
 ### 6.4 日志存储
 

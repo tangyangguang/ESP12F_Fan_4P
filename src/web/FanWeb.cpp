@@ -213,7 +213,8 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
-    "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{setMsg('Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
+    "function reloadCfg(f){fetch('/api/config').then(r=>r.json()).then(j=>{if(j.ok)applyCfg(j.data,f)})}"
+    "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
     "function watchIr(n,seq){fetch('/api/status').then(r=>r.json()).then(j=>{var d=j.data;if(!d)return;if(d.ir_learning){setIr('Learning '+n+' - '+d.ir_remaining+'s','muted');setTimeout(()=>watchIr(n,seq),500)}else if(d.ir_learn_seq!=seq){setIr('Learned '+n+' - protocol '+d.ir_last_protocol+' code '+d.ir_last_code,'oktxt')}else{setIr('Learn timeout - no valid signal','errtxt')}}).catch(()=>setIr('Learn status failed','errtxt'))}"
     "function learn(i,n){setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){setIr('Learning '+n+' - press remote','muted');watchIr(n,d.seq)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
     "</script>";
@@ -259,9 +260,9 @@ void FanWeb::handleConfigPage() {
     Esp8266BaseWeb::sendContent_P(CONFIG_LED_FLASH_END);
 
     // Auto Restore
-    Esp8266BaseWeb::sendContent_P(_controller->getAutoRestore() ? "selected" : "");
+    Esp8266BaseWeb::sendChunk(_controller->getAutoRestore() ? "selected" : "");
     Esp8266BaseWeb::sendContent_P(CONFIG_AUTO_END);
-    Esp8266BaseWeb::sendContent_P(_controller->getAutoRestore() ? "" : "selected");
+    Esp8266BaseWeb::sendChunk(_controller->getAutoRestore() ? "" : "selected");
     Esp8266BaseWeb::sendContent_P(CONFIG_AUTO_END2);
 
     Esp8266BaseWeb::sendFooter();
@@ -296,7 +297,7 @@ void FanWeb::handleApiStatus() {
         "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"timer_remaining\":%lu,"
         "\"run_duration\":%lu,\"blocked\":%s,\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
-        "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%08llX\"}}",
+        "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\"}}",
         stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
         (unsigned long)_controller->getTimerRemaining(),
         (unsigned long)_controller->getTotalRunDuration(),
@@ -484,7 +485,7 @@ void FanWeb::handleApiConfig() {
         }
 
         bool flushed = Esp8266BaseConfig::flush();
-        if (flushed) {
+        if (flushed && changed > 0) {
             _controller->notifyUserAction();
         }
         ESP8266BASE_LOG_I("FanWeb", "config_save_complete changed=%u flushed=%u",
@@ -522,19 +523,6 @@ void FanWeb::handleApiConfig() {
     }
 }
 
-void FanWeb::handleApiLogs() {
-    if (!Esp8266BaseWeb::checkAuth()) return;
-    Esp8266BaseWeb::server().send(200, "application/json", "{\"ok\":true,\"data\":[]}");
-}
-
-void FanWeb::handleApiReset() {
-    if (!Esp8266BaseWeb::checkAuth()) return;
-    ESP8266BASE_LOG_W("FanWeb", "user_action factory_reset");
-    _controller->resetFactory();
-    // Note: This will restart, so response might not be sent.
-    Esp8266BaseWeb::server().send(200, "application/json", "{\"ok\":true}");
-}
-
 void FanWeb::handleApiIrLearn() {
     if (!Esp8266BaseWeb::checkAuth()) return;
 
@@ -552,23 +540,4 @@ void FanWeb::handleApiIrLearn() {
     }
     ESP8266BASE_LOG_W("FanWeb", "invalid_ir_learn_request");
     server.send(400, "application/json", "{\"error\":\"invalid request\"}");
-}
-
-void FanWeb::handleApiIrStatus() {
-    if (!Esp8266BaseWeb::checkAuth()) return;
-
-    char buf[512];
-    char* p = buf;
-    p += snprintf(p, sizeof(buf), "{\"ok\":true,\"learning\":%s,\"codes\":[", _ir->isLearning() ? "true" : "false");
-
-    for (uint8_t i = 0; i < 6; i++) {
-        uint8_t proto;
-        uint64_t code;
-        _ir->getKeyCode(i, &proto, &code);
-        p += snprintf(p, buf + sizeof(buf) - p, "{\"protocol\":%d,\"code\":\"0x%08llX\"}%s",
-                 proto, (unsigned long long)code, i < 5 ? "," : "");
-    }
-    snprintf(p, buf + sizeof(buf) - p, "]}");
-    
-    Esp8266BaseWeb::server().send(200, "application/json", buf);
 }

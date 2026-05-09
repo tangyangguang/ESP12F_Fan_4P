@@ -47,8 +47,10 @@ Thumbs.db
 *.log
 
 # =====================================
-# 5. 本地过程文件
+# 5. 本地过程文件 / AI 辅助工具缓存
 # =====================================
 evaluations/
 CLAUDE.md
+.claude/
 .codex-worklog.md
+opencode.json

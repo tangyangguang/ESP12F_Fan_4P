@@ -2,10 +2,9 @@
 #define IR_RECEIVER_DRIVER_H
 
 #include <stdint.h>
+#include <IRrecv.h>
 
-// IR receive buffer size (reduced from 1024 to 512 to save RAM)
 static const uint16_t kCaptureBufferSize = 512;
-// Timeout for IR receive (ms)
 static const uint16_t kCaptureTimeout = 50;
 
 enum IREvent {
@@ -61,6 +60,8 @@ private:
     IREvent matchCode(uint8_t protocol, uint64_t code);
 
     uint8_t _recv_pin;
+    IRrecv _irrecv;
+    bool _initialized;
     bool _learning;
     uint8_t _learning_key_index;
     uint32_t _learning_start_tick;

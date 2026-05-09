@@ -118,7 +118,9 @@ ButtonEvent ButtonDriver::getEvent() {
         }
     }
 
-    // Reset long press trigger when both released
+    // After the destructive both-button action, require a full release before
+    // accepting any new short press. This avoids accidental events while the
+    // user is still unwinding the long-press gesture.
     if (!_accel_pressed && !_decel_pressed) {
         _both_long_triggered = false;
     }

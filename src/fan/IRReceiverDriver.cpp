@@ -6,6 +6,8 @@
 
 IRReceiverDriver::IRReceiverDriver(uint8_t recv_pin)
     : _recv_pin(recv_pin)
+    , _irrecv(recv_pin, kCaptureBufferSize, kCaptureTimeout, true)
+    , _initialized(false)
     , _learning(false)
     , _learning_key_index(0)
     , _learning_start_tick(0)
@@ -25,7 +27,10 @@ IRReceiverDriver::IRReceiverDriver(uint8_t recv_pin)
 }
 
 bool IRReceiverDriver::begin() {
-    // IRremoteESP8266 will be initialized on first use
+    if (!_initialized) {
+        _irrecv.enableIRIn();
+        _initialized = true;
+    }
     ESP8266BASE_LOG_I("IR", "Initialized: RECV=GPIO%d", _recv_pin);
     return true;
 }
@@ -39,18 +44,9 @@ IREvent IRReceiverDriver::getEvent() {
     }
 #endif
 
-    static IRrecv irrecv(_recv_pin, kCaptureBufferSize, kCaptureTimeout, true);
-    static bool initialized = false;
-
-    if (!initialized) {
-        irrecv.enableIRIn();
-        initialized = true;
-        ESP8266BASE_LOG_D("IR", "IR receiver enabled");
-    }
-
     decode_results results;
 
-    if (!irrecv.decode(&results)) {
+    if (!_irrecv.decode(&results)) {
         // Check learning timeout
         if (_learning && (millis() - _learning_start_tick >= LEARNING_TIMEOUT_MS)) {
             ESP8266BASE_LOG_W("IR", "Learning timeout (key=%d)", _learning_key_index);
@@ -61,7 +57,7 @@ IREvent IRReceiverDriver::getEvent() {
 
 #ifndef UNIT_TEST
     if (results.repeat) {
-        irrecv.resume();
+        _irrecv.resume();
         ESP8266BASE_LOG_D("IR", "Ignored repeat IR frame: protocol=%d, code=0x%08llX",
                           (int)results.decode_type, static_cast<unsigned long long>(results.value));
         return IR_EVENT_NONE;
@@ -69,7 +65,7 @@ IREvent IRReceiverDriver::getEvent() {
 #endif
 
     if ((int)results.decode_type <= 0 || results.value == 0) {
-        irrecv.resume();
+        _irrecv.resume();
         ESP8266BASE_LOG_D("IR", "Ignored undecoded IR frame: protocol=%d, code=0x%08llX",
                           (int)results.decode_type, static_cast<unsigned long long>(results.value));
         return IR_EVENT_NONE;
@@ -79,7 +75,7 @@ IREvent IRReceiverDriver::getEvent() {
     _last_protocol = (uint8_t)results.decode_type;
     _last_code = results.value;
 
-    irrecv.resume();
+    _irrecv.resume();
 
     ESP8266BASE_LOG_D("IR", "Received: protocol=%d, code=0x%08llX",
              _last_protocol, static_cast<unsigned long long>(_last_code));

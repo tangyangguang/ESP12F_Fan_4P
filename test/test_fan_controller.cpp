@@ -1101,6 +1101,7 @@ void test_controller_block_recovery_success_returns_to_running() {
     TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
     g_mock_millis = 1200; ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+    TEST_ASSERT_EQUAL(1, ctrl.getTotalRunDuration());
 
     ctrl.setSpeed(50);
     for (uint8_t i = 0; i < 20; i++) {
@@ -1116,6 +1117,10 @@ void test_controller_block_recovery_success_returns_to_running() {
     g_mock_millis = 2700; ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
     TEST_ASSERT_FALSE(fan.isBlocked());
+    TEST_ASSERT_EQUAL(1, ctrl.getTotalRunDuration());
+
+    g_mock_millis = 3700; ctrl.tick();
+    TEST_ASSERT_EQUAL(2, ctrl.getTotalRunDuration());
 }
 
 void test_controller_wifi_disconnected_uses_slow_blink() {

@@ -375,6 +375,7 @@ void FanController::_handleError() {
             _recovery_attempting = false;
             if (_fan.getRpm() > 0) {
                 _state = SYS_RUNNING;
+                _last_run_tick = millis();
                 ESP8266BASE_LOG_I("FanCtrl", "Recovery successful, back to RUNNING");
             } else {
                 ESP8266BASE_LOG_W("FanCtrl", "Recovery failed, still blocked");

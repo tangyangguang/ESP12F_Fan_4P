@@ -851,6 +851,27 @@ void test_controller_run_duration_catches_up_after_late_tick() {
     ctrl.tick();
 
     TEST_ASSERT_EQUAL(3, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(3, ctrl.getBootRunDuration());
+}
+
+void test_controller_run_duration_persistence_is_throttled() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 59000;
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(59, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_run_duration", -1));
+
+    g_mock_millis = 60000;
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(60, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(60, Esp8266BaseConfig::getInt("fan_run_duration", -1));
 }
 
 void test_controller_timer_countdown_while_idle() {
@@ -1096,6 +1117,7 @@ void test_controller_run_duration() {
         ctrl.tick();
     }
     TEST_ASSERT_EQUAL(5, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(5, ctrl.getBootRunDuration());
 }
 
 void test_controller_config_persistence() {
@@ -1516,18 +1538,22 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Blocked</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>RPM</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Gear</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Run time</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "s</b></div><div class=stat><span>RSSI"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Total run</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Boot run</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=runTotal"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=runBoot"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Min speed</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Soft start / stop</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Block detect</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Sleep wait</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Restore</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>LED flash</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Date</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Time</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Date</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Time</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Clock</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function rf(s)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('runTotal',rf(d.run_duration))"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('runBoot',rf(d.boot_run_duration))"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "pollMs=d.speed==d.target_speed?3000:500"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('rpmTop','-- rpm');e('rpm','-- rpm')"));
 }
@@ -1588,6 +1614,8 @@ void test_web_api_status_reports_business_metrics() {
     TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"gear\":0"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"rpm\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"run_duration\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"boot_run_duration\":0"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"min_speed\":12"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"soft_start\":700"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"soft_stop\":800"));
@@ -1952,6 +1980,7 @@ int main() {
     RUN_TEST(test_controller_timer_countdown);
     RUN_TEST(test_controller_timer_catches_up_after_late_tick);
     RUN_TEST(test_controller_run_duration_catches_up_after_late_tick);
+    RUN_TEST(test_controller_run_duration_persistence_is_throttled);
     RUN_TEST(test_controller_timer_countdown_while_idle);
     RUN_TEST(test_controller_timer_countdown_while_error);
     RUN_TEST(test_controller_power_on_restore);

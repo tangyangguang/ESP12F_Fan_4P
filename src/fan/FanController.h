@@ -31,6 +31,7 @@ public:
     uint16_t getCurrentRpm() const;
     uint32_t getTimerRemaining() const;
     uint32_t getTotalRunDuration() const;
+    uint32_t getBootRunDuration() const;
     bool isBlocked() const;
     bool isSleeping() const;
 
@@ -97,6 +98,7 @@ public:
     uint8_t _target_speed;
     uint32_t _timer_remaining;
     uint32_t _run_duration;
+    uint32_t _boot_run_duration;
     uint32_t _last_run_tick;
     uint32_t _last_operation_tick;
     uint32_t _last_runtime_save_tick;

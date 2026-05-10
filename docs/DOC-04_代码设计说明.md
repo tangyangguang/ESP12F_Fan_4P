@@ -25,7 +25,7 @@
 | `fan_auto_restore` | bool | true | 断电后是否自动恢复运行状态（false=上电停止） |
 | `fan_last_speed` | int32_t | 0 | 上次目标转速，断电恢复用 |
 | `fan_last_timer` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |
-| `fan_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，掉电不丢失 |
+| `fan_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，低频持久化，掉电不丢失 |
 | `fan_ir_key_0` ~ `fan_ir_key_7` | string | 空 | 8 个红外按键的 `protocol:hex_code` 编码 |
 
 ### 1.2 运行时状态（内存中）
@@ -37,7 +37,7 @@
 | `target_speed` | uint8_t | 目标转速，渐变过程中使用 |
 | `timer_remaining` | uint32_t | 定时剩余时间，单位秒，0=无定时 |
 | `run_duration` | uint32_t | 总累计运行时长，单位秒，不清零 |
-| `uptime` | uint32_t | 本次启动后连续运行时长，单位秒 |
+| `boot_run_duration` | uint32_t | 本次设备启动后累计运行时长，单位秒，重启归零 |
 | `is_blocked` | bool | 是否处于堵转保护状态 |
 | `wifi_connected` | bool | WiFi 是否连接成功 |
 | `ntp_synced` | bool | NTP 网络时间是否同步成功 |
@@ -230,6 +230,7 @@ public:
     uint16_t getCurrentRpm() const;
     uint32_t getTimerRemaining() const;
     uint32_t getTotalRunDuration() const;
+    uint32_t getBootRunDuration() const;
     bool isBlocked() const;
     bool isSleeping() const;
 
@@ -308,7 +309,7 @@ private:
 
 | 路径 | 功能 | 内容 |
 |------|------|------|
-| `/fan` | 状态主页 | 状态（堵转合并显示）、目标/输出速度、档位、RPM、定时、运行时长、RSSI、日期、时间 |
+| `/fan` | 状态主页 | 状态（堵转合并显示）、目标/输出速度、档位、RPM、定时、累计总运行时长、本次启动后运行时长、RSSI |
 | `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、访问密码、红外学习、红外命令学习状态、上电恢复策略 |
 | `/esp8266base` | 系统首页 | Esp8266Base 内置 Network、Device、Time 状态页，显示 OTA free 等基础状态 |
 | `/wifi` | WiFi 配网页 | Esp8266Base 内置 STA/AP 配网入口 |
@@ -332,11 +333,9 @@ private:
 │  Gear: 2                            │
 │  RPM: 1200 rpm                      │
 │  Timer: 30m 0s                      │
-│  Run time: 12h 0m                   │
-├─────────────────────────────────────┤
+│  Total run: 12h 0m                  │
+│  Boot run: 25m 30s                  │
 │  RSSI: -65 dBm                      │
-│  Date: 2026-05-09                   │
-│  Time: 12:00:00                     │
 ├─────────────────────────────────────┤
 │  [Off] [25] [50] [75] [100]         │
 │  [Apply] [Set] [Cancel] [Stop fan]  │
@@ -351,7 +350,7 @@ private:
 
 | 方法 | 路径 | 功能 | 请求示例 | 返回示例 |
 |------|------|------|----------|----------|
-| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"Running","speed":50,"target_speed":50,"gear":2,"rpm":1200,"timer_remaining":1800,"run_duration":3600,"blocked":false,"min_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"auto_restore":true,"led_flash_ms":200,"ip":"192.168.1.100","rssi":-65,"clock":"2026-05-09 12:00:00","ir_learning":false,"ir_key":0,"ir_remaining":0,"ir_learn_seq":1,"ir_reject_seq":0,"ir_duplicate_key":8,"ir_last_protocol":1,"ir_last_code":"0x0000E01F"}}` |
+| GET | `/api/status` | 获取设备运行状态 | - | `{"ok":true,"data":{"state":"Running","speed":50,"target_speed":50,"gear":2,"rpm":1200,"timer_remaining":1800,"run_duration":3600,"boot_run_duration":1200,"blocked":false,"min_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"auto_restore":true,"led_flash_ms":200,"ip":"192.168.1.100","rssi":-65,"clock":"2026-05-09 12:00:00","ir_learning":false,"ir_key":0,"ir_remaining":0,"ir_learn_seq":1,"ir_reject_seq":0,"ir_duplicate_key":8,"ir_last_protocol":1,"ir_last_code":"0x0000E01F"}}` |
 | POST | `/api/speed` | 设置风扇转速 | `speed=70` | `{"ok":true,"speed":70,"target_speed":70}` |
 | POST | `/api/timer` | 设置定时关机 | `seconds=3600` | `{"ok":true,"timer_remaining":3600}` |
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |

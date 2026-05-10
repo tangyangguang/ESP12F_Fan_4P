@@ -33,6 +33,7 @@ const char* KEY_LAST_SPEED = "fan_last_speed";
 const char* KEY_LAST_TIMER = "fan_last_timer";
 const char* KEY_RUN_DURATION = "fan_run_duration";
 const char* KEY_IR_ENTRY = "fan_ir_key_";
+const uint32_t RUNTIME_SAVE_INTERVAL_MS = 60000UL;
 
 // Gear to speed mapping
 const uint8_t GEAR_SPEED[5] = {0, 25, 50, 75, 100};
@@ -64,6 +65,7 @@ FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& le
     , _target_speed(0)
     , _timer_remaining(0)
     , _run_duration(0)
+    , _boot_run_duration(0)
     , _last_run_tick(0)
     , _last_operation_tick(0)
     , _last_runtime_save_tick(0)
@@ -161,6 +163,7 @@ uint8_t FanController::getTargetSpeed() const { return _target_speed; }
 uint16_t FanController::getCurrentRpm() const { return _fan.getRpm(); }
 uint32_t FanController::getTimerRemaining() const { return _timer_remaining; }
 uint32_t FanController::getTotalRunDuration() const { return _run_duration; }
+uint32_t FanController::getBootRunDuration() const { return _boot_run_duration; }
 bool FanController::isBlocked() const { return _fan.isBlocked(); }
 bool FanController::isSleeping() const { return _is_sleeping; }
 bool FanController::getAutoRestore() const { return _auto_restore; }
@@ -347,6 +350,7 @@ void FanController::_handleRunning() {
     bool duration_changed = false;
     while (now - _last_run_tick >= 1000) {
         _run_duration++;
+        _boot_run_duration++;
         _last_run_tick += 1000;
         duration_changed = true;
     }
@@ -564,8 +568,8 @@ bool FanController::_applySpeed(uint8_t speed, bool force_save) {
 void FanController::_saveRuntimeState(bool force) {
     uint32_t now = millis();
 
-    // Throttle Flash writes: max once every 5 seconds.
-    if (!force && now - _last_runtime_save_tick < 5000) return;
+    // Throttle Flash writes. UI uses in-memory counters; persistence can lag to reduce wear.
+    if (!force && now - _last_runtime_save_tick < RUNTIME_SAVE_INTERVAL_MS) return;
     _last_runtime_save_tick = now;
 
     if (_auto_restore) {

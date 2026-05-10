@@ -112,22 +112,18 @@ static const char FAN_TIMER_INPUT_END[] PROGMEM =
     "<script>"
     "var rem=";
 static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
-    ";var clkMs=0,clkOk=false;function e(i,v){var x=document.getElementById(i);if(x)x.textContent=v}"
-    "function pad(n){return(n<10?'0':'')+n}"
-    "function cp(s){var m=/(\\d+)-(\\d+)-(\\d+) (\\d+):(\\d+):(\\d+)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime():0}"
-    "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
+    ";function e(i,v){var x=document.getElementById(i);if(x)x.textContent=v}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
     "function rf(s){s=parseInt(s||0);if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'}"
-    "function cd(s){return(s&&s!='N/A')?s.split(' ')[0]:'N/A'}function ct(s){return(s&&s!='N/A')?s.split(' ')[1]:'N/A'}"
     "function tt(o,t){var w=document.getElementById('targetTopWrap');if(w)w.style.display=o==t?'none':''}"
-    "var pollMs=3000,pollTimer=0;function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',rf(d.run_duration));e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;pollMs=d.speed==d.target_speed?3000:500;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "var pollMs=3000,pollTimer=0;function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('runTotal',rf(d.run_duration));e('runBoot',rf(d.boot_run_duration));e('rssi',d.rssi+' dBm');rem=d.timer_remaining;pollMs=d.speed==d.target_speed?3000:500;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function sched(ms){clearTimeout(pollTimer);pollTimer=setTimeout(poll,ms)}function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data);sched(pollMs)}).catch(()=>sched(3000))}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
     "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);e('rpmTop','-- rpm');e('rpm','-- rpm');tt(parseInt(document.getElementById('outTop').textContent||0),v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
     "function tm(v){v=parseInt(v||0);if(v>=0&&v<=5940){rem=v*60;e('tim',tf(rem));document.getElementById('tv').value=v;post('/api/timer','seconds='+rem)}}"
     "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');e('outTop','0');e('rpmTop','-- rpm');e('rpm','-- rpm');tt(0,0);post('/api/stop','')}"
-    "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;var c=cf(clkMs);e('date',cd(c));e('time',ct(c))}}"
-    "clkMs=cp(document.getElementById('date').textContent+' '+document.getElementById('time').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);sched(3000)"
+    "function uiTick(){if(rem>0)rem--;e('tim',tf(rem))}"
+    "setInterval(uiTick,1000);sched(3000)"
     "</script>";
 
 void FanWeb::handleStatusPage() {
@@ -199,36 +195,15 @@ void FanWeb::handleStatusPage() {
     // Run Time
     char duration[24];
     formatRunDuration(_controller->getTotalRunDuration(), duration, sizeof(duration));
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Run time</span><b id=run>%s</b></div>", duration);
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Total run</span><b id=runTotal>%s</b></div>", duration);
+    Esp8266BaseWeb::sendChunk(buf);
+    formatRunDuration(_controller->getBootRunDuration(), duration, sizeof(duration));
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Boot run</span><b id=runBoot>%s</b></div>", duration);
     Esp8266BaseWeb::sendChunk(buf);
 
     long rssi = Esp8266BaseWiFi::isConnected() ? (long)WiFi.RSSI() : 0;
     snprintf(buf, sizeof(buf), "<div class=stat><span>RSSI</span><b id=rssi>%ld dBm</b></div>", rssi);
     Esp8266BaseWeb::sendChunk(buf);
-
-    // NTP
-    if (Esp8266BaseNTP::isSynced()) {
-        Esp8266BaseNTP::formatTo(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
-    } else {
-        strcpy(buf, "N/A");
-    }
-    char date[11];
-    char time[9];
-    if (strcmp(buf, "N/A") == 0) {
-        strcpy(date, "N/A");
-        strcpy(time, "N/A");
-    } else {
-        memcpy(date, buf, 10);
-        date[10] = '\0';
-        memcpy(time, buf + 11, 8);
-        time[8] = '\0';
-    }
-    Esp8266BaseWeb::sendChunk("<div class=stat><span>Date</span><b id=date>");
-    Esp8266BaseWeb::sendChunk(date);
-    Esp8266BaseWeb::sendChunk("</b></div>");
-    Esp8266BaseWeb::sendChunk("<div class=stat><span>Time</span><b id=time>");
-    Esp8266BaseWeb::sendChunk(time);
-    Esp8266BaseWeb::sendChunk("</b></div>");
 
     Esp8266BaseWeb::sendContent_P(FAN_STATUS_MID);
     snprintf(buf, sizeof(buf), "%d", _controller->getTargetSpeed());
@@ -395,7 +370,7 @@ void FanWeb::handleApiStatus() {
     uint8_t ir_key = _ir->getLearnedKeyIndex();
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"gear\":%u,\"rpm\":%u,\"timer_remaining\":%lu,"
-        "\"run_duration\":%lu,\"blocked\":%s,\"min_speed\":%u,\"soft_start\":%u,\"soft_stop\":%u,"
+        "\"run_duration\":%lu,\"boot_run_duration\":%lu,\"blocked\":%s,\"min_speed\":%u,\"soft_start\":%u,\"soft_stop\":%u,"
         "\"block_detect\":%u,\"sleep_wait\":%u,\"auto_restore\":%s,\"led_flash_ms\":%u,"
         "\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
@@ -406,6 +381,7 @@ void FanWeb::handleApiStatus() {
         _controller->getCurrentRpm(),
         (unsigned long)_controller->getTimerRemaining(),
         (unsigned long)_controller->getTotalRunDuration(),
+        (unsigned long)_controller->getBootRunDuration(),
         _controller->isBlocked() ? "true" : "false",
         _controller->getMinEffectiveSpeed(),
         _controller->getSoftStartTime(),

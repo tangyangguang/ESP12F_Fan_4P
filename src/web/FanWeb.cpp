@@ -26,6 +26,19 @@ bool parseUintArg(const String& value, uint32_t min_value, uint32_t max_value, u
     return true;
 }
 
+void formatRunDuration(uint32_t seconds, char* out, size_t out_size) {
+    if (out == nullptr || out_size == 0) return;
+    if (seconds < 3600) {
+        snprintf(out, out_size, "%lum %lus",
+                 static_cast<unsigned long>(seconds / 60),
+                 static_cast<unsigned long>(seconds % 60));
+    } else {
+        snprintf(out, out_size, "%luh %lum",
+                 static_cast<unsigned long>(seconds / 3600),
+                 static_cast<unsigned long>((seconds % 3600) / 60));
+    }
+}
+
 const char* irKeyName(uint8_t index) {
     switch (index) {
         case IR_KEY_SPEED_UP: return "Speed Up";
@@ -67,7 +80,7 @@ static const char APP_STYLE[] PROGMEM =
     "input,select{width:100%;min-height:38px;box-sizing:border-box;border:1px solid #c8d0da;border-radius:6px;padding:8px;background:#fff;font-size:14px;font-weight:400;margin:0;color:#111827}"
     ".row input:not([type=submit]){height:42px;min-height:42px;margin:0!important;padding:0 10px;display:block}.row button{height:42px;min-height:42px;padding:0 7px;align-self:center}"
     ".oktxt{color:#157347}.errtxt{color:#b42318}.help{color:#6b7280;font-size:14px;margin:7px 0 0;line-height:1.4}"
-    ".irlist{display:grid;gap:5px}.irrow{display:grid;grid-template-columns:1fr 58px 58px;gap:6px;align-items:center;background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:6px 8px}.irrow b{display:block;font-size:14px;font-weight:400;color:#111827}.irrow span{display:block;color:#6b7280;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.irrow span.warn{color:#b45309}.irrow button{min-height:32px;padding:0 6px}.irrow button.secondary{background:#6b7280}"
+    ".irlist{display:grid;gap:5px}.irrow{display:grid;grid-template-columns:1fr 58px 58px;gap:6px;align-items:center;background:#f8fafc;border:1px solid #e8edf3;border-radius:6px;padding:6px 8px;transition:background-color .2s,border-color .2s}.irrow.hit{background:#fff7ed;border-color:#fdba74}.irrow b{display:block;font-size:14px;font-weight:400;color:#111827}.irrow span{display:block;color:#6b7280;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.irrow span.warn{color:#b45309}.irrow button{min-height:32px;padding:0 6px}.irrow button.secondary{background:#6b7280}"
     ".savebar{display:block;margin-top:8px;padding:7px 8px;border-radius:6px;background:#f8fafc;border:1px solid #e8edf3;font-size:14px}.savebar.oktxt{background:#f0f9f4;border-color:#b7e4c7}.savebar.errtxt{background:#fff5f3;border-color:#f1b8ad}"
     "pre.log{white-space:pre-wrap;word-break:break-word;background:#111827;color:#e5e7eb;border-radius:6px;padding:9px;max-height:430px;overflow:auto;font-size:14px;font-weight:400}"
     "@media(max-width:390px){body{padding:8px}.chips{grid-template-columns:repeat(3,1fr)}.formgrid{grid-template-columns:1fr}}"
@@ -104,16 +117,17 @@ static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     "function cp(s){var m=/(\\d+)-(\\d+)-(\\d+) (\\d+):(\\d+):(\\d+)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime():0}"
     "function cf(t){var d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}"
     "function tf(s){s=parseInt(s||0);if(s<=0)return'Off';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60;return h+'h '+m+'m '+r+'s'}"
+    "function rf(s){s=parseInt(s||0);if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'}"
     "function cd(s){return(s&&s!='N/A')?s.split(' ')[0]:'N/A'}function ct(s){return(s&&s!='N/A')?s.split(' ')[1]:'N/A'}"
     "function tt(o,t){var w=document.getElementById('targetTopWrap');if(w)w.style.display=o==t?'none':''}"
-    "function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',Math.floor(d.run_duration/3600)+' h');e('min',d.min_speed+'%');e('soft',d.soft_start+' / '+d.soft_stop+' ms');e('blkcfg',d.block_detect+' ms');e('sleep',d.sleep_wait+' s');e('restore',d.auto_restore?'On':'Off');e('ledf',d.led_flash_ms+' ms');e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
-    "function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data)})}"
+    "var pollMs=3000,pollTimer=0;function draw(d){var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('run',rf(d.run_duration));e('rssi',d.rssi+' dBm');e('date',cd(d.clock));e('time',ct(d.clock));rem=d.timer_remaining;clkMs=cp(d.clock);clkOk=clkMs>0;pollMs=d.speed==d.target_speed?3000:500;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "function sched(ms){clearTimeout(pollTimer);pollTimer=setTimeout(poll,ms)}function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data);sched(pollMs)}).catch(()=>sched(3000))}"
     "function post(u,b,cb){fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(()=>{if(cb)cb();setTimeout(poll,250)})}"
-    "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);tt(parseInt(document.getElementById('outTop').textContent||0),v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
+    "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100){e('tgt',v+'%');e('tgtTop',v);e('rpmTop','-- rpm');e('rpm','-- rpm');tt(parseInt(document.getElementById('outTop').textContent||0),v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
     "function tm(v){v=parseInt(v||0);if(v>=0&&v<=5940){rem=v*60;e('tim',tf(rem));document.getElementById('tv').value=v;post('/api/timer','seconds='+rem)}}"
-    "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');e('outTop','0');tt(0,0);post('/api/stop','')}"
+    "function stopFan(){rem=0;e('tim','Off');e('tgt','0%');e('tgtTop','0');e('outTop','0');e('rpmTop','-- rpm');e('rpm','-- rpm');tt(0,0);post('/api/stop','')}"
     "function uiTick(){if(rem>0)rem--;e('tim',tf(rem));if(clkOk){clkMs+=1000;var c=cf(clkMs);e('date',cd(c));e('time',ct(c))}}"
-    "clkMs=cp(document.getElementById('date').textContent+' '+document.getElementById('time').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);setInterval(poll,3000)"
+    "clkMs=cp(document.getElementById('date').textContent+' '+document.getElementById('time').textContent);clkOk=clkMs>0;setInterval(uiTick,1000);sched(3000)"
     "</script>";
 
 void FanWeb::handleStatusPage() {
@@ -183,32 +197,9 @@ void FanWeb::handleStatusPage() {
     Esp8266BaseWeb::sendChunk("</b></div>");
 
     // Run Time
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Run time</span><b id=run>%lu h</b></div>",
-             (unsigned long)(_controller->getTotalRunDuration() / 3600));
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Min speed</span><b id=min>%u%%</b></div>",
-             _controller->getMinEffectiveSpeed());
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Soft start / stop</span><b id=soft>%u / %u ms</b></div>",
-             _controller->getSoftStartTime(), _controller->getSoftStopTime());
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Block detect</span><b id=blkcfg>%u ms</b></div>",
-             _controller->getBlockDetectTime());
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Sleep wait</span><b id=sleep>%u s</b></div>",
-             _controller->getSleepWaitTime());
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>Restore</span><b id=restore>%s</b></div>",
-             _controller->getAutoRestore() ? "On" : "Off");
-    Esp8266BaseWeb::sendChunk(buf);
-
-    snprintf(buf, sizeof(buf), "<div class=stat><span>LED flash</span><b id=ledf>%u ms</b></div>",
-             _controller->getLedFlashDuration());
+    char duration[24];
+    formatRunDuration(_controller->getTotalRunDuration(), duration, sizeof(duration));
+    snprintf(buf, sizeof(buf), "<div class=stat><span>Run time</span><b id=run>%s</b></div>", duration);
     Esp8266BaseWeb::sendChunk(buf);
 
     long rssi = Esp8266BaseWiFi::isConnected() ? (long)WiFi.RSSI() : 0;
@@ -277,17 +268,19 @@ static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div 
 static const char CONFIG_IR_END[] PROGMEM =
     "</div><div class=help>Press one, then point the remote within 10 seconds.</div><span id=irMsg class='savebar muted'>Ready</span></div>"
     "<script>"
-    "var irNames=['Speed Up','Speed Down','Stop','30 min','1 h','2 h','4 h','8 h'],irToken=0,irDeadline=0,irDup=-1;function irName(i){return irNames[i]||('key '+i)}function irLeft(){return Math.max(0,Math.ceil((irDeadline-Date.now())/1000))}"
+    "var irNames=['Speed Up','Speed Down','Stop','30 min','1 h','2 h','4 h','8 h'],irToken=0,irDeadline=0,irDup=-1,irReject=0;function irName(i){return irNames[i]||('key '+i)}function irLeft(){return Math.max(0,Math.ceil((irDeadline-Date.now())/1000))}"
     "function setMsg(t,c){var m=document.getElementById('saveMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
-    "function setIrRow(i,t){var e=document.getElementById('irv'+i);if(e)e.textContent=t}"
+    "function setIrRow(i,t,c){var e=document.getElementById('irv'+i);if(e){e.textContent=t;e.className=c||''}}"
+    "function hitIr(i){var e=document.getElementById('irr'+i);if(e){e.className='irrow hit';setTimeout(()=>{e.className='irrow'},600)}}"
     "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
     "function reloadCfg(f){fetch('/api/config').then(r=>r.json()).then(j=>{if(j.ok)applyCfg(j.data,f)})}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
-    "function showLearn(n){var l=irLeft();if(l<=0){setIr('Learn timeout - no valid signal','errtxt');return false}if(irDup>=0)setIr('Already assigned to '+irName(irDup)+'. Press a different key - '+l+'s','errtxt');else setIr('Learning '+n+' - '+l+'s','muted');return true}"
-    "function watchIr(i,n,seq,rej,tok){if(tok!=irToken||!showLearn(n))return;fetch('/api/status').then(r=>r.json()).then(j=>{if(tok!=irToken)return;var d=j.data;if(!d)return;if(d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v);setIr('Learned '+n+' - '+v,'oktxt');return}if(!d.ir_learning){setIr('Learn timeout - no valid signal','errtxt');return}irDup=d.ir_duplicate_key<irNames.length?d.ir_duplicate_key:-1;setTimeout(()=>watchIr(i,n,seq,d.ir_reject_seq,tok),500)}).catch(()=>{if(tok==irToken&&showLearn(n))setTimeout(()=>watchIr(i,n,seq,rej,tok),500)})}"
-    "function learn(i,n){irToken++;irDup=-1;var tok=irToken;setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){irDeadline=Date.now()+d.timeout*1000;watchIr(i,n,d.seq,d.rej_seq,tok)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
-    "function clearIr(i,n){if(!confirm('Clear IR code for '+n+'?'))return;setIr('Clearing '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i+'&clear=1'}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{if(x.ok&&x.j.ok){setIrRow(i,'Not learned');setIr(x.j.changed?('Cleared '+n):('No code for '+n),x.j.changed?'oktxt':'muted')}else setIr('Clear failed','errtxt')}).catch(()=>setIr('Clear failed: network error','errtxt'))}"
+    "function finishIr(i,n,seq,tok){fetch('/api/status').then(r=>r.json()).then(j=>{if(tok!=irToken)return;var d=j.data;if(d&&d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v,'');setIr('Learned '+n+' - '+v,'oktxt');setTimeout(()=>location.reload(),600)}else setIr('Learn timeout - no valid signal','errtxt')}).catch(()=>setIr('Learn timeout - no valid signal','errtxt'))}"
+    "function showLearn(n){var l=irLeft();if(l<=0)return false;if(irDup>=0)setIr('Already assigned to '+irName(irDup)+'. Press a different key - '+l+'s','errtxt');else setIr('Learning '+n+' - '+l+'s','muted');return true}"
+    "function watchIr(i,n,seq,tok){if(tok!=irToken)return;if(!showLearn(n)){finishIr(i,n,seq,tok);return}fetch('/api/status').then(r=>r.json()).then(j=>{if(tok!=irToken)return;var d=j.data;if(!d)return;if(d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v,'');setIr('Learned '+n+' - '+v,'oktxt');setTimeout(()=>location.reload(),600);return}if(!d.ir_learning){setIr('Learn timeout - no valid signal','errtxt');return}var nd=d.ir_duplicate_key<irNames.length?d.ir_duplicate_key:-1;if(nd>=0&&(nd!=irDup||d.ir_reject_seq!=irReject))hitIr(nd);irDup=nd;irReject=d.ir_reject_seq;setTimeout(()=>watchIr(i,n,seq,tok),500)}).catch(()=>{if(tok==irToken&&showLearn(n))setTimeout(()=>watchIr(i,n,seq,tok),500)})}"
+    "function learn(i,n){irToken++;irDup=-1;irReject=0;var tok=irToken;setIr('Starting '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i}).then(r=>r.json()).then(d=>{if(d.ok){irReject=d.rej_seq||0;irDeadline=Date.now()+d.timeout*1000;watchIr(i,n,d.seq,tok)}else setIr('Learn failed','errtxt')}).catch(()=>setIr('Learn failed: network error','errtxt'))}"
+    "function clearIr(i,n){if(!confirm('Clear IR code for '+n+'?'))return;setIr('Clearing '+n+'...','muted');fetch('/api/ir/learn',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'key_index='+i+'&clear=1'}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{if(x.ok&&x.j.ok){setIrRow(i,'Not learned','');setIr(x.j.changed?('Cleared '+n):('No code for '+n),x.j.changed?'oktxt':'muted');setTimeout(()=>location.reload(),600)}else setIr('Clear failed','errtxt')}).catch(()=>setIr('Clear failed: network error','errtxt'))}"
     "</script>";
 
 void FanWeb::handleConfigPage() {
@@ -363,10 +356,10 @@ void FanWeb::handleConfigPage() {
         }
         char row[320];
         snprintf(row, sizeof(row),
-            "<div class=irrow><div><b>%s</b><span id=irv%u%s>%s</span></div>"
+            "<div class=irrow id=irr%u><div><b>%s</b><span id=irv%u%s>%s</span></div>"
             "<button onclick='learn(%u,\"%s\")'>Learn</button>"
             "<button class=secondary onclick='clearIr(%u,\"%s\")'>Clear</button></div>",
-            irKeyName(i), i, duplicate ? " class=warn" : "", value,
+            i, irKeyName(i), i, duplicate ? " class=warn" : "", value,
             i, irKeyName(i), i, irKeyName(i));
         Esp8266BaseWeb::sendChunk(row);
     }
@@ -651,25 +644,26 @@ void FanWeb::handleApiIrLearn() {
     auto& server = Esp8266BaseWeb::server();
     if (server.method() == HTTP_POST && server.hasArg("key_index")) {
         uint32_t idx = 0;
-        if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) && server.hasArg("clear")) {
-            bool changed = _controller->clearIRCode(static_cast<uint8_t>(idx));
-            if (changed) _controller->notifyUserAction();
-            ESP8266BASE_LOG_I("FanWeb", "user_action ir_clear key=%lu changed=%u",
-                              static_cast<unsigned long>(idx), changed ? 1U : 0U);
-            char buf[64];
-            snprintf(buf, sizeof(buf), "{\"ok\":true,\"changed\":%s}", changed ? "true" : "false");
-            server.send(200, "application/json", buf);
-            return;
-        }
-        if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx) &&
-            _ir->startLearning(static_cast<uint8_t>(idx))) {
-            ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));
-            char buf[128];
-            snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu,\"rej_seq\":%lu}",
-                     (unsigned long)_ir->getLearnedSequence(),
-                     (unsigned long)_ir->getLearnRejectSequence());
-            server.send(200, "application/json", buf);
-            return;
+        if (parseUintArg(server.arg("key_index"), 0, IR_KEY_COUNT - 1, &idx)) {
+            if (server.hasArg("clear")) {
+                bool changed = _controller->clearIRCode(static_cast<uint8_t>(idx));
+                if (changed) _controller->notifyUserAction();
+                ESP8266BASE_LOG_I("FanWeb", "user_action ir_clear key=%lu changed=%u",
+                                  static_cast<unsigned long>(idx), changed ? 1U : 0U);
+                char buf[64];
+                snprintf(buf, sizeof(buf), "{\"ok\":true,\"changed\":%s}", changed ? "true" : "false");
+                server.send(200, "application/json", buf);
+                return;
+            }
+            if (_ir->startLearning(static_cast<uint8_t>(idx))) {
+                ESP8266BASE_LOG_I("FanWeb", "user_action ir_learn key=%lu", static_cast<unsigned long>(idx));
+                char buf[128];
+                snprintf(buf, sizeof(buf), "{\"ok\":true,\"learning\":true,\"timeout\":10,\"seq\":%lu,\"rej_seq\":%lu}",
+                         (unsigned long)_ir->getLearnedSequence(),
+                         (unsigned long)_ir->getLearnRejectSequence());
+                server.send(200, "application/json", buf);
+                return;
+            }
         }
     }
     ESP8266BASE_LOG_W("FanWeb", "invalid_ir_learn_request");

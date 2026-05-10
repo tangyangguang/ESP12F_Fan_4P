@@ -431,11 +431,16 @@ void test_ir_driver_begin() {
 void test_ir_learning_mode() {
     IRReceiverDriver ir(13);
     ir.begin();
+    ir.testMarkLearned(IR_KEY_TIMER_1H, 2, 0x00FFAA55);
+    TEST_ASSERT_EQUAL(2, ir.getLastProtocol());
+    TEST_ASSERT_EQUAL(0x00FFAA55, ir.getLastCode());
     TEST_ASSERT_FALSE(ir.isLearning());
     TEST_ASSERT_TRUE(ir.startLearning(0));
     TEST_ASSERT_TRUE(ir.isLearning());
     TEST_ASSERT_EQUAL(0, ir.getLearnedKeyIndex());
     TEST_ASSERT_EQUAL(10, ir.getLearningRemaining());
+    TEST_ASSERT_EQUAL(0, ir.getLastProtocol());
+    TEST_ASSERT_EQUAL(0, ir.getLastCode());
 }
 
 void test_ir_learning_timeout() {
@@ -1511,15 +1516,20 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Blocked</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>RPM</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Gear</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Min speed</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Soft start / stop</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Block detect</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Sleep wait</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Restore</span>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>LED flash</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Run time</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "s</b></div><div class=stat><span>RSSI"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Min speed</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Soft start / stop</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Block detect</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Sleep wait</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Restore</span>"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>LED flash</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Date</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>Time</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Clock</span>"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function rf(s)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "pollMs=d.speed==d.target_speed?3000:500"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('rpmTop','-- rpm');e('rpm','-- rpm')"));
 }
 
 void test_web_status_page_topline_hides_target_when_equal() {
@@ -1798,11 +1808,16 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "clearIr(7,\"8 h\")"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "confirm('Clear IR code for '+n+'?')"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, ">Clear</button>"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setIrRow(i,v,'')"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "irDeadline=Date.now()+d.timeout*1000"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function irLeft()"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "showLearn(n)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "finishIr(i,n,seq,tok)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setTimeout(()=>location.reload(),600)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function hitIr(i)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "d.ir_reject_seq!=irReject"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Already assigned to '+irName(irDup)"));
+    TEST_ASSERT_NULL(strstr(g_web_page_body, "function watchIr(i,n,seq,rej,tok)"));
 }
 
 void test_status_page_contains_4h_and_8h_timer_presets() {

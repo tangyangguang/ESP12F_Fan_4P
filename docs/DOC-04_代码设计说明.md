@@ -308,7 +308,7 @@ private:
 
 | 路径 | 功能 | 内容 |
 |------|------|------|
-| `/fan` | 状态主页 | 状态（堵转合并显示）、目标/输出速度、档位、RPM、定时、运行时长、关键控制参数、RSSI、日期、时间 |
+| `/fan` | 状态主页 | 状态（堵转合并显示）、目标/输出速度、档位、RPM、定时、运行时长、RSSI、日期、时间 |
 | `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、访问密码、红外学习、红外命令学习状态、上电恢复策略 |
 | `/esp8266base` | 系统首页 | Esp8266Base 内置 Network、Device、Time 状态页，显示 OTA free 等基础状态 |
 | `/wifi` | WiFi 配网页 | Esp8266Base 内置 STA/AP 配网入口 |
@@ -332,13 +332,7 @@ private:
 │  Gear: 2                            │
 │  RPM: 1200 rpm                      │
 │  Timer: 30m 0s                      │
-│  Run time: 12 h                     │
-│  Min speed: 10%                     │
-│  Soft start / stop: 1000 / 1000 ms  │
-│  Block detect: 1500 ms              │
-│  Sleep wait: 60 s                   │
-│  Restore: On                        │
-│  LED flash: 200 ms                  │
+│  Run time: 12h 0m                   │
 ├─────────────────────────────────────┤
 │  RSSI: -65 dBm                      │
 │  Date: 2026-05-09                   │

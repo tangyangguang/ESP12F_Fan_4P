@@ -80,6 +80,7 @@ private:
     uint8_t _duplicate_key_index;
     uint32_t _ignore_until_tick;
     static const uint32_t LEARNING_TIMEOUT_MS = 10000;
+    static const uint32_t DUPLICATE_LEARN_IGNORE_MS = 500;
     static const uint32_t POST_LEARN_IGNORE_MS = 1200;
 
     uint8_t _protocols[IR_KEY_COUNT];

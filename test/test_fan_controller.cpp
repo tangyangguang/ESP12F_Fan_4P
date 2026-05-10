@@ -1902,7 +1902,7 @@ void test_config_page_contains_led_flash_field() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "0 disables action feedback flash."));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "name=runtime_save_min"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "min=1 max=60"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Flash save interval for runtime state."));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "after power loss, timer and total run can lose up to this interval."));
 }
 
 void test_config_page_contains_extended_ir_learning_buttons() {
@@ -1932,8 +1932,11 @@ void test_config_page_contains_extended_ir_learning_buttons() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function irLeft()"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "showLearn(n)"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "finishIr(i,n,seq,tok)"));
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setTimeout(()=>location.reload(),600)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "setTimeout(()=>location.reload(),2500)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "else finishIr(i,n,seq,tok)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "d&&d.ir_learning&&(retry||0)<2"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "function hitIr(i)"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "clearTimeout(hitTimers[i])"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "d.ir_reject_seq!=irReject"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Already assigned to '+irName(irDup)"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "function watchIr(i,n,seq,rej,tok)"));

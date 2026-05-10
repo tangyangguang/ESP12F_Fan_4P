@@ -22,7 +22,7 @@
 | `fan_block_detect` | int32_t | 1500 | 堵转检测时间，单位 ms，范围 100-5000 |
 | `fan_sleep_wait` | int32_t | 60 | 风扇停止后到进入休眠的等待时间，单位秒，范围 0-3600 |
 | `fan_led_flash_ms` | int32_t | 200 | 有效操作反馈闪烁时长，单位 ms，范围 0-2000；0 表示关闭操作反馈 |
-| `fan_runtime_save_min` | int32_t | 1 | 运行状态持久化节流间隔，单位分钟，范围 1-60 |
+| `fan_runtime_save_min` | int32_t | 1 | 运行状态持久化节流间隔，单位分钟，范围 1-60；断电后定时剩余时间和累计运行时长最多回退该间隔 |
 | `fan_auto_restore` | bool | true | 断电后是否自动恢复运行状态（false=上电停止） |
 | `fan_last_speed` | int32_t | 0 | 上次目标转速，断电恢复用 |
 | `fan_last_timer` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |

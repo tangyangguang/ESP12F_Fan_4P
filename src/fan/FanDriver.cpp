@@ -10,6 +10,7 @@ FanDriver::FanDriver(uint8_t pwm_pin, uint8_t tach_pin)
     , _tach_pin(tach_pin)
     , _current_speed(0)
     , _target_speed(0)
+    , _soft_stop_start_speed(0)
     , _soft_start_time(1000)
     , _soft_stop_time(1000)
     , _block_detect_time(1500)
@@ -85,11 +86,12 @@ void FanDriver::tick() {
         uint32_t elapsed = now - _soft_start_tick;
         if (_soft_stop_time > 0 && elapsed < _soft_stop_time) {
             uint32_t progress = (elapsed * 100) / _soft_stop_time;
-            uint8_t gradient_speed = static_cast<uint8_t>(_current_speed * (100 - progress) / 100);
+            uint8_t gradient_speed = static_cast<uint8_t>(_soft_stop_start_speed * (100 - progress) / 100);
             analogWrite(_pwm_pin, gradient_speed * 255 / 100);
             _current_speed = gradient_speed;
         } else {
             _current_speed = 0;
+            _soft_stop_start_speed = 0;
             analogWrite(_pwm_pin, 0);
             _state = FAN_STATE_IDLE;
             ESP8266BASE_LOG_I("FanDrv", "Soft stop complete");
@@ -131,10 +133,12 @@ bool FanDriver::setSpeed(uint8_t speed) {
         if (_current_speed > 0 && _soft_stop_time > 0) {
             _state = FAN_STATE_SOFT_STOP;
             _soft_start_tick = now;
+            _soft_stop_start_speed = _current_speed;
             ESP8266BASE_LOG_I("FanDrv", "Soft stop start: %d%% -> 0%% (%lums)",
                      _current_speed, static_cast<unsigned long>(_soft_stop_time));
         } else {
             _current_speed = 0;
+            _soft_stop_start_speed = 0;
             analogWrite(_pwm_pin, 0);
             _state = FAN_STATE_IDLE;
             ESP8266BASE_LOG_I("FanDrv", "Stop immediate");

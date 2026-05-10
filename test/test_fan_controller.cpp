@@ -277,6 +277,11 @@ void test_fan_driver_soft_stop() {
     fan.setSpeed(0);
     TEST_ASSERT_EQUAL(FAN_STATE_SOFT_STOP, fan.getState());
 
+    g_mock_millis = 2500; fan.tick();
+    TEST_ASSERT_EQUAL(25, fan.getSpeed());
+    TEST_ASSERT_EQUAL(25 * 255 / 100, g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(FAN_STATE_SOFT_STOP, fan.getState());
+
     g_mock_millis = 4000; fan.tick();
     TEST_ASSERT_EQUAL(0, fan.getSpeed());
     TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
@@ -774,6 +779,16 @@ void test_controller_stop() {
     TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
     TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
     TEST_ASSERT_EQUAL(0, ctrl.getCurrentGear());
+    TEST_ASSERT_EQUAL(FAN_STATE_SOFT_STOP, fan.getState());
+    TEST_ASSERT_EQUAL(50, ctrl.getCurrentSpeed());
+
+    g_mock_millis = 2000; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    TEST_ASSERT_EQUAL(25, ctrl.getCurrentSpeed());
+
+    g_mock_millis = 2500; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_IDLE, ctrl.getState());
+    TEST_ASSERT_EQUAL(0, ctrl.getCurrentSpeed());
 }
 
 void test_controller_stop_clears_error_state() {

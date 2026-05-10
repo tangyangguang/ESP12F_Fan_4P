@@ -28,6 +28,7 @@ FanDriver::FanDriver(uint8_t pwm_pin, uint8_t tach_pin)
 bool FanDriver::begin() {
     pinMode(_pwm_pin, OUTPUT);
     analogWriteFreq(25000);  // 25KHz PWM
+    analogWriteRange(255);
     analogWrite(_pwm_pin, 0);
 
     pinMode(_tach_pin, INPUT_PULLUP);
@@ -197,12 +198,17 @@ bool FanDriver::isBlocked() const {
 
 void FanDriver::resetBlock() {
     if (_state == FAN_STATE_BLOCKED) {
-        _state = FAN_STATE_IDLE;
-        _current_speed = 0;
-        _target_speed = 0;
+        forceStop();
         _block_start_tick = millis();
-        analogWrite(_pwm_pin, 0);
     }
+}
+
+void FanDriver::forceStop() {
+    _state = FAN_STATE_IDLE;
+    _current_speed = 0;
+    _target_speed = 0;
+    _soft_stop_start_speed = 0;
+    analogWrite(_pwm_pin, 0);
 }
 
 void IRAM_ATTR FanDriver::tachISR() {

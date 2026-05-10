@@ -165,7 +165,7 @@ uint16_t FanController::getCurrentRpm() const { return _fan.getRpm(); }
 uint32_t FanController::getTimerRemaining() const { return _timer_remaining; }
 uint32_t FanController::getTotalRunDuration() const { return _run_duration; }
 uint32_t FanController::getBootRunDuration() const { return _boot_run_duration; }
-bool FanController::isBlocked() const { return _fan.isBlocked(); }
+bool FanController::isBlocked() const { return _state == SYS_ERROR || _fan.isBlocked(); }
 bool FanController::isSleeping() const { return _is_sleeping; }
 bool FanController::getAutoRestore() const { return _auto_restore; }
 
@@ -413,7 +413,10 @@ void FanController::_handleError() {
                 ESP8266BASE_LOG_I("FanCtrl", "Recovery successful, back to RUNNING");
             } else {
                 ESP8266BASE_LOG_W("FanCtrl", "Recovery failed, still blocked");
-                _fan.resetBlock();
+                _target_speed = 0;
+                _current_gear = 0;
+                _fan.forceStop();
+                _saveRuntimeState(true);
             }
         }
     }

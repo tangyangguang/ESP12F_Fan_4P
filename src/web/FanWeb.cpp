@@ -463,9 +463,14 @@ void FanWeb::handleApiTimer() {
 
 void FanWeb::handleApiStop() {
     if (!Esp8266BaseWeb::checkAuth()) return;
+    auto& server = Esp8266BaseWeb::server();
+    if (server.method() != HTTP_POST) {
+        server.send(405, "application/json", "{\"error\":\"method not allowed\"}");
+        return;
+    }
     ESP8266BASE_LOG_I("FanWeb", "user_action stop_fan");
     _controller->stop();
-    Esp8266BaseWeb::server().send(200, "application/json", "{\"ok\":true}");
+    server.send(200, "application/json", "{\"ok\":true}");
 }
 
 void FanWeb::handleApiConfig() {

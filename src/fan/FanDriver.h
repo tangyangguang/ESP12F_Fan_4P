@@ -30,6 +30,7 @@ public:
 
     bool isBlocked() const;
     void resetBlock();
+    void forceStop();
 
 private:
     static void tachISR();

@@ -24,7 +24,8 @@ static uint8_t g_pin_mode[20]  = {0};
 static uint8_t g_pin_state[20] = {0};
 static uint8_t g_pin_write_kind[20] = {0};
 static uint32_t g_pwm_freq     = 0;
-static uint8_t g_pwm_value[20] = {0};
+static uint32_t g_pwm_range    = 0;
+static uint32_t g_pwm_value[20] = {0};
 static void (*g_isr_handlers[20])() = {nullptr};
 static bool g_esp_restart_called = false;
 
@@ -32,7 +33,8 @@ void pinMode(uint8_t pin, uint8_t mode)                          { g_pin_mode[pi
 uint8_t digitalRead(uint8_t pin)                                  { return g_pin_state[pin]; }
 void digitalWrite(uint8_t pin, uint8_t val)                       { g_pin_state[pin] = val; g_pin_write_kind[pin] = 1; }
 void analogWriteFreq(uint32_t freq)                               { g_pwm_freq = freq; }
-void analogWrite(uint8_t pin, uint8_t val)                        { g_pwm_value[pin] = val; g_pin_write_kind[pin] = 2; }
+void analogWriteRange(uint32_t range)                             { g_pwm_range = range; }
+void analogWrite(uint8_t pin, uint32_t val)                       { g_pwm_value[pin] = val; g_pin_write_kind[pin] = 2; }
 void attachInterrupt(uint8_t pin, void (*h)(), int)               { g_isr_handlers[pin] = h; }
 void detachInterrupt(uint8_t pin)                                  { g_isr_handlers[pin] = nullptr; }
 uint8_t digitalPinToInterrupt(uint8_t pin)                        { return pin; }
@@ -232,6 +234,7 @@ void setUp() {
     memset(g_pin_write_kind, 0, sizeof(g_pin_write_kind));
     memset(g_pwm_value, 0, sizeof(g_pwm_value));
     g_pwm_freq = 0;
+    g_pwm_range = 0;
     memset(g_isr_handlers, 0, sizeof(g_isr_handlers));
     g_esp_restart_called = false;
     Esp8266BaseConfig::reset();
@@ -250,6 +253,7 @@ void test_fan_driver_begin() {
     TEST_ASSERT_EQUAL(OUTPUT,       g_pin_mode[5]);
     TEST_ASSERT_EQUAL(INPUT_PULLUP, g_pin_mode[12]);
     TEST_ASSERT_EQUAL(25000,        g_pwm_freq);
+    TEST_ASSERT_EQUAL(255,          g_pwm_range);
     TEST_ASSERT_EQUAL(0,            g_pwm_value[5]);
     TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
 }
@@ -526,6 +530,7 @@ void test_ir_learning_rejects_duplicate_code_for_other_key() {
 void test_led_indicator_active_low_gear_brightness() {
     LedIndicator led(2, true);
     led.begin();
+    TEST_ASSERT_EQUAL(255, g_pwm_range);
 
     led.setGear(0); led.tick();
     TEST_ASSERT_EQUAL(1, g_pin_write_kind[2]);
@@ -1298,6 +1303,12 @@ void test_controller_block_recovery_failure_stays_error() {
     g_mock_millis = 2700; ctrl.tick();
     TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
     TEST_ASSERT_FALSE(fan.isBlocked());
+    TEST_ASSERT_TRUE(ctrl.isBlocked());
+    TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
+    TEST_ASSERT_EQUAL(0, fan.getSpeed());
+    TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(0, g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_last_speed", -1));
 }
 
 void test_controller_block_recovery_success_returns_to_running() {
@@ -1731,6 +1742,21 @@ void test_web_api_stop() {
     TEST_ASSERT_EQUAL(0, ctrl.getTimerRemaining());
 }
 
+void test_web_api_stop_requires_post() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    ctrl.setSpeed(50);
+
+    MockWebServer::setMethod(HTTP_GET);
+    FanWeb::handleApiStop();
+    TEST_ASSERT_EQUAL(405, MockWebServer::lastCode());
+    TEST_ASSERT_EQUAL(50, ctrl.getTargetSpeed());
+}
+
 void test_web_api_config_get() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -2136,6 +2162,7 @@ int main() {
     RUN_TEST(test_web_api_status_reports_business_metrics);
     RUN_TEST(test_web_api_timer);
     RUN_TEST(test_web_api_stop);
+    RUN_TEST(test_web_api_stop_requires_post);
     RUN_TEST(test_web_api_config_get);
     RUN_TEST(test_web_api_config_rejects_invalid_values);
     RUN_TEST(test_web_api_config_rejects_without_partial_apply);

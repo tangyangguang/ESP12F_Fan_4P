@@ -26,7 +26,7 @@
 | `fan_auto_restore` | bool | true | 断电后是否自动恢复运行状态（false=上电停止） |
 | `fan_last_speed` | int32_t | 0 | 上次目标转速，断电恢复用 |
 | `fan_last_timer` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |
-| `fan_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，低频持久化，掉电不丢失 |
+| `fan_run_duration` | int32_t | 0 | 累计总运行时长，单位秒，低频持久化，断电最多回退 `fan_runtime_save_min` |
 | `fan_ir_key_0` ~ `fan_ir_key_7` | string | 空 | 8 个红外按键的 `protocol:hex_code` 编码 |
 
 ### 1.2 运行时状态（内存中）
@@ -71,7 +71,7 @@
 6. **堵转检测**：输出≥最低有效转速且连续检测时间无转速反馈时，立即切断输出并报警；保护触发后任意控制源发送启动指令可触发恢复尝试（1.5s 内有转速则恢复）；重启自动清除
 7. **低功耗休眠**：风扇停止且无操作超时后进入 Modem Sleep，保持 WiFi 连接和 Web 服务可访问，响应<1000ms
 8. **断电恢复**：`auto_restore=true` 时恢复到断电前状态（转速 + 定时剩余时间），`auto_restore=false` 时上电停止
-9. **运行时长统计**：持续累计总运行时长和本次启动运行时长，不清零，掉电不丢失
+9. **运行时长统计**：持续累计总运行时长和本次启动运行时长；累计值低频持久化，断电最多回退 `fan_runtime_save_min`
 10. **WiFi 重连**：连接失败后默认 30 秒重试，连续 5 次失败后延长到 5 分钟
 
 ### 2.2 优先级规则
@@ -417,7 +417,7 @@ Esp8266Base::begin();
 | GPIO0 | BOOT 键 | 长按 1s 清除 WiFi 凭证 |
 | GPIO2 | 板载 LED | ESP-12E 模块内置，低电平亮，支持 PWM 调光 |
 | GPIO4 | 减速键 | 内部上拉，按下为低，仅短按 |
-| GPIO5 | PWM_OUT | 风扇 PWM 输出，频率 25KHz |
+| GPIO5 | PWM_OUT | 风扇 PWM 输出，频率 25KHz，软件固定 `analogWriteRange(255)` |
 | GPIO12 | FAN_TACH | 风扇转速反馈输入 |
 | GPIO13 | IR_RECV | 1838 红外接收头 |
 | GPIO14 | 加速键 | 内部上拉，按下为低，仅短按 |

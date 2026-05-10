@@ -19,6 +19,7 @@ LedIndicator::LedIndicator(uint8_t pin, bool active_low)
 
 bool LedIndicator::begin() {
     pinMode(_pin, OUTPUT);
+    analogWriteRange(255);
     writeDigital(false);
 
     ESP8266BASE_LOG_I("LedInd", "Initialized: GPIO%d, active_low=%s", _pin, _active_low ? "true" : "false");

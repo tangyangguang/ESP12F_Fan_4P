@@ -58,6 +58,8 @@ public:
     void setAutoRestore(bool enable);
     uint16_t getLedFlashDuration() const;
     void setLedFlashDuration(uint16_t ms);
+    uint8_t getRuntimeSaveIntervalMinutes() const;
+    void setRuntimeSaveIntervalMinutes(uint8_t minutes);
 
 private:
     void _handleInit();
@@ -107,6 +109,7 @@ public:
     uint16_t _soft_stop_time;
     uint16_t _block_detect_time;
     uint16_t _led_flash_duration_ms;
+    uint8_t _runtime_save_interval_min;
     uint8_t _min_effective_speed;
 
     bool _is_sleeping;

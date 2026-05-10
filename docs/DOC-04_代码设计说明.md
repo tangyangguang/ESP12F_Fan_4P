@@ -22,6 +22,7 @@
 | `fan_block_detect` | int32_t | 1500 | 堵转检测时间，单位 ms，范围 100-5000 |
 | `fan_sleep_wait` | int32_t | 60 | 风扇停止后到进入休眠的等待时间，单位秒，范围 0-3600 |
 | `fan_led_flash_ms` | int32_t | 200 | 有效操作反馈闪烁时长，单位 ms，范围 0-2000；0 表示关闭操作反馈 |
+| `fan_runtime_save_min` | int32_t | 1 | 运行状态持久化节流间隔，单位分钟，范围 1-60 |
 | `fan_auto_restore` | bool | true | 断电后是否自动恢复运行状态（false=上电停止） |
 | `fan_last_speed` | int32_t | 0 | 上次目标转速，断电恢复用 |
 | `fan_last_timer` | int32_t | 0 | 上次剩余定时时间，断电恢复用 |
@@ -354,8 +355,8 @@ private:
 | POST | `/api/speed` | 设置风扇转速 | `speed=70` | `{"ok":true,"speed":70,"target_speed":70}` |
 | POST | `/api/timer` | 设置定时关机 | `seconds=3600` | `{"ok":true,"timer_remaining":3600}` |
 | POST | `/api/stop` | 立即停止风扇 | - | `{"ok":true}` |
-| GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
-| POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true,"data":{"min_effective_speed":15,"soft_start":500,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"auto_restore":true}}` |
+| GET | `/api/config` | 获取配置参数 | - | `{"ok":true,"data":{"min_effective_speed":10,"soft_start":1000,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"runtime_save_min":1,"auto_restore":true}}` |
+| POST | `/api/config` | 修改配置参数 | `min_speed=15&soft_start=500` | `{"ok":true,"changed":2,"flushed":true,"data":{"min_effective_speed":15,"soft_start":500,"soft_stop":1000,"block_detect":1500,"sleep_wait":60,"led_flash_ms":200,"runtime_save_min":1,"auto_restore":true}}` |
 | POST | `/api/ir/learn` | 开始红外学习或清除红外码 | `key_index=0..7` / `key_index=0..7&clear=1` | `{"ok":true,"learning":true,"timeout":10,"seq":1,"rej_seq":0}` / `{"ok":true,"changed":true}` |
 
 ---

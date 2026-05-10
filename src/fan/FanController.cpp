@@ -29,11 +29,11 @@ const char* KEY_BLOCK_DETECT = "fan_block_detect";
 const char* KEY_SLEEP_WAIT = "fan_sleep_wait";
 const char* KEY_AUTO_RESTORE = "fan_auto_restore";
 const char* KEY_LED_FLASH_MS = "fan_led_flash_ms";
+const char* KEY_RUNTIME_SAVE_MIN = "fan_runtime_save_min";
 const char* KEY_LAST_SPEED = "fan_last_speed";
 const char* KEY_LAST_TIMER = "fan_last_timer";
 const char* KEY_RUN_DURATION = "fan_run_duration";
 const char* KEY_IR_ENTRY = "fan_ir_key_";
-const uint32_t RUNTIME_SAVE_INTERVAL_MS = 60000UL;
 
 // Gear to speed mapping
 const uint8_t GEAR_SPEED[5] = {0, 25, 50, 75, 100};
@@ -74,6 +74,7 @@ FanController::FanController(FanDriver& fan, ButtonDriver& btn, LedIndicator& le
     , _soft_stop_time(1000)
     , _block_detect_time(1500)
     , _led_flash_duration_ms(200)
+    , _runtime_save_interval_min(1)
     , _min_effective_speed(10)
     , _is_sleeping(false)
     , _sleep_entry_tick(0)
@@ -332,6 +333,17 @@ void FanController::setLedFlashDuration(uint16_t ms) {
     Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
 }
 
+uint8_t FanController::getRuntimeSaveIntervalMinutes() const {
+    return _runtime_save_interval_min;
+}
+
+void FanController::setRuntimeSaveIntervalMinutes(uint8_t minutes) {
+    if (minutes < 1) minutes = 1;
+    if (minutes > 60) minutes = 60;
+    _runtime_save_interval_min = minutes;
+    Esp8266BaseConfig::setInt(KEY_RUNTIME_SAVE_MIN, static_cast<int32_t>(_runtime_save_interval_min));
+}
+
 void FanController::_handleInit() { _state = SYS_IDLE; }
 
 void FanController::_handleIdle() {
@@ -569,7 +581,8 @@ void FanController::_saveRuntimeState(bool force) {
     uint32_t now = millis();
 
     // Throttle Flash writes. UI uses in-memory counters; persistence can lag to reduce wear.
-    if (!force && now - _last_runtime_save_tick < RUNTIME_SAVE_INTERVAL_MS) return;
+    uint32_t interval_ms = static_cast<uint32_t>(_runtime_save_interval_min) * 60000UL;
+    if (!force && now - _last_runtime_save_tick < interval_ms) return;
     _last_runtime_save_tick = now;
 
     if (_auto_restore) {
@@ -616,6 +629,10 @@ void FanController::_loadConfig() {
     if (led_flash_ms > 2000) led_flash_ms = 2000;
     _led_flash_duration_ms = static_cast<uint16_t>(led_flash_ms);
     _led.setFlashDuration(_led_flash_duration_ms);
+    int32_t runtime_save_min = Esp8266BaseConfig::getInt(KEY_RUNTIME_SAVE_MIN, 1);
+    if (runtime_save_min < 1) runtime_save_min = 1;
+    if (runtime_save_min > 60) runtime_save_min = 60;
+    _runtime_save_interval_min = static_cast<uint8_t>(runtime_save_min);
 
     int32_t soft_start = Esp8266BaseConfig::getInt(KEY_SOFT_START, 1000);
     int32_t soft_stop = Esp8266BaseConfig::getInt(KEY_SOFT_STOP, 1000);
@@ -686,6 +703,7 @@ void FanController::_saveConfig() {
     Esp8266BaseConfig::setInt(KEY_SLEEP_WAIT, _sleep_wait_time);
     Esp8266BaseConfig::setBool(KEY_AUTO_RESTORE, _auto_restore);
     Esp8266BaseConfig::setInt(KEY_LED_FLASH_MS, static_cast<int32_t>(_led_flash_duration_ms));
+    Esp8266BaseConfig::setInt(KEY_RUNTIME_SAVE_MIN, static_cast<int32_t>(_runtime_save_interval_min));
 }
 
 void FanController::_saveIRCodes() {

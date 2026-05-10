@@ -874,6 +874,27 @@ void test_controller_run_duration_persistence_is_throttled() {
     TEST_ASSERT_EQUAL(60, Esp8266BaseConfig::getInt("fan_run_duration", -1));
 }
 
+void test_controller_run_duration_uses_configured_save_interval() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setRuntimeSaveIntervalMinutes(2);
+    fan.setBlockDetectTime(60000);
+    fan.setSoftStartTime(0);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 119000;
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(119, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_run_duration", -1));
+
+    g_mock_millis = 120000;
+    ctrl.tick();
+    TEST_ASSERT_EQUAL(120, ctrl.getTotalRunDuration());
+    TEST_ASSERT_EQUAL(120, Esp8266BaseConfig::getInt("fan_run_duration", -1));
+}
+
 void test_controller_timer_countdown_while_idle() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -996,6 +1017,43 @@ void test_controller_set_led_flash_duration_clamps_to_2000() {
     TEST_ASSERT_EQUAL(2000, ctrl.getLedFlashDuration());
     TEST_ASSERT_EQUAL(2000, led.getFlashDuration());
     TEST_ASSERT_EQUAL(2000, Esp8266BaseConfig::getInt("fan_led_flash_ms", -1));
+}
+
+void test_controller_runtime_save_interval_defaults_and_loads_bounds() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    TEST_ASSERT_EQUAL(1, ctrl.getRuntimeSaveIntervalMinutes());
+
+    Esp8266BaseConfig::setInt("fan_runtime_save_min", 0);
+    FanDriver fan0(5, 12); ButtonDriver btn0(14, 4);
+    LedIndicator led0(2, true); IRReceiverDriver ir0(13);
+    FanController ctrl0(fan0, btn0, led0, ir0);
+    ctrl0.begin();
+    TEST_ASSERT_EQUAL(1, ctrl0.getRuntimeSaveIntervalMinutes());
+
+    Esp8266BaseConfig::setInt("fan_runtime_save_min", 61);
+    FanDriver fan1(5, 12); ButtonDriver btn1(14, 4);
+    LedIndicator led1(2, true); IRReceiverDriver ir1(13);
+    FanController ctrl1(fan1, btn1, led1, ir1);
+    ctrl1.begin();
+    TEST_ASSERT_EQUAL(60, ctrl1.getRuntimeSaveIntervalMinutes());
+}
+
+void test_controller_set_runtime_save_interval_clamps_to_range() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+
+    ctrl.setRuntimeSaveIntervalMinutes(0);
+    TEST_ASSERT_EQUAL(1, ctrl.getRuntimeSaveIntervalMinutes());
+    TEST_ASSERT_EQUAL(1, Esp8266BaseConfig::getInt("fan_runtime_save_min", -1));
+
+    ctrl.setRuntimeSaveIntervalMinutes(90);
+    TEST_ASSERT_EQUAL(60, ctrl.getRuntimeSaveIntervalMinutes());
+    TEST_ASSERT_EQUAL(60, Esp8266BaseConfig::getInt("fan_runtime_save_min", -1));
 }
 
 void test_controller_auto_restore_disabled_skips_restore_state_writes() {
@@ -1667,6 +1725,7 @@ void test_web_api_config_get() {
     ctrl.setMinEffectiveSpeed(15);
     ctrl.setSleepWaitTime(90);
     ctrl.setLedFlashDuration(1200);
+    ctrl.setRuntimeSaveIntervalMinutes(30);
 
     MockWebServer::setMethod(HTTP_GET);
     FanWeb::handleApiConfig();
@@ -1674,6 +1733,7 @@ void test_web_api_config_get() {
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"min_effective_speed\":15"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"sleep_wait\":90"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":1200"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"runtime_save_min\":30"));
 }
 
 void test_web_api_config_rejects_invalid_values() {
@@ -1709,6 +1769,18 @@ void test_web_api_config_rejects_invalid_values() {
     MockWebServer::reset();
     MockWebServer::setMethod(HTTP_POST);
     MockWebServer::setArg("led_flash_ms", "abc");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("runtime_save_min", "0");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
+
+    MockWebServer::reset();
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("runtime_save_min", "61");
     FanWeb::handleApiConfig();
     TEST_ASSERT_EQUAL(400, MockWebServer::lastCode());
 }
@@ -1801,6 +1873,22 @@ void test_web_api_config_led_flash_ms_2000_saves() {
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"led_flash_ms\":2000"));
 }
 
+void test_web_api_config_runtime_save_min_saves() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    MockWebServer::setMethod(HTTP_POST);
+    MockWebServer::setArg("runtime_save_min", "60");
+    FanWeb::handleApiConfig();
+    TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_EQUAL(60, ctrl.getRuntimeSaveIntervalMinutes());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"changed\":1"));
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"runtime_save_min\":60"));
+}
+
 void test_config_page_contains_led_flash_field() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -1812,6 +1900,9 @@ void test_config_page_contains_led_flash_field() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "name=led_flash_ms"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "min=0 max=2000"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "0 disables action feedback flash."));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "name=runtime_save_min"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "min=1 max=60"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Flash save interval for runtime state."));
 }
 
 void test_config_page_contains_extended_ir_learning_buttons() {
@@ -1981,6 +2072,7 @@ int main() {
     RUN_TEST(test_controller_timer_catches_up_after_late_tick);
     RUN_TEST(test_controller_run_duration_catches_up_after_late_tick);
     RUN_TEST(test_controller_run_duration_persistence_is_throttled);
+    RUN_TEST(test_controller_run_duration_uses_configured_save_interval);
     RUN_TEST(test_controller_timer_countdown_while_idle);
     RUN_TEST(test_controller_timer_countdown_while_error);
     RUN_TEST(test_controller_power_on_restore);
@@ -1989,6 +2081,8 @@ int main() {
     RUN_TEST(test_controller_led_flash_duration_loads_bounds);
     RUN_TEST(test_controller_led_flash_duration_clamps_config_values);
     RUN_TEST(test_controller_set_led_flash_duration_clamps_to_2000);
+    RUN_TEST(test_controller_runtime_save_interval_defaults_and_loads_bounds);
+    RUN_TEST(test_controller_set_runtime_save_interval_clamps_to_range);
     RUN_TEST(test_controller_auto_restore_disabled_skips_restore_state_writes);
     RUN_TEST(test_controller_runtime_state_saved_for_timer_and_stop);
     RUN_TEST(test_controller_sleep_mode);
@@ -2031,6 +2125,7 @@ int main() {
     RUN_TEST(test_web_api_config_no_change_does_not_flash);
     RUN_TEST(test_web_api_config_led_flash_ms_zero_disables_feedback);
     RUN_TEST(test_web_api_config_led_flash_ms_2000_saves);
+    RUN_TEST(test_web_api_config_runtime_save_min_saves);
     RUN_TEST(test_config_page_contains_led_flash_field);
     RUN_TEST(test_config_page_contains_extended_ir_learning_buttons);
     RUN_TEST(test_status_page_contains_4h_and_8h_timer_presets);

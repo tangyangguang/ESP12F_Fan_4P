@@ -235,6 +235,8 @@ static const char CONFIG_STOP_END[] PROGMEM = "'><div class=help>Ramp down time.
 static const char CONFIG_BLOCK_END[] PROGMEM = "'><div class=help>No RPM for this long means blocked.</div></div>"
     "<div class=field><label>LED flash (ms)</label><input type=number name=led_flash_ms min=0 max=2000 value='";
 static const char CONFIG_LED_FLASH_END[] PROGMEM = "'><div class=help>0 disables action feedback flash.</div></div>"
+    "<div class=field><label>Runtime save (min)</label><input type=number name=runtime_save_min min=1 max=60 value='";
+static const char CONFIG_RUNTIME_SAVE_END[] PROGMEM = "'><div class=help>Flash save interval for runtime state.</div></div>"
     "<div class=field><label>Power-on restore</label><select name=auto_restore><option value=1 ";
 static const char CONFIG_AUTO_END[] PROGMEM = ">Enabled</option><option value=0 ";
 static const char CONFIG_AUTO_END2[] PROGMEM = ">Disabled</option></select><div class=help>Restore last speed and timer after reboot.</div></div></div>"
@@ -248,7 +250,7 @@ static const char CONFIG_IR_END[] PROGMEM =
     "function setIr(t,c){var m=document.getElementById('irMsg');m.textContent=t;m.className='savebar '+c}"
     "function setIrRow(i,t,c){var e=document.getElementById('irv'+i);if(e){e.textContent=t;e.className=c||''}}"
     "function hitIr(i){var e=document.getElementById('irr'+i);if(e){e.className='irrow hit';setTimeout(()=>{e.className='irrow'},600)}}"
-    "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.auto_restore.value=d.auto_restore?1:0}"
+    "function applyCfg(d,f){if(!d)return;f.min_speed.value=d.min_effective_speed;f.sleep_wait.value=d.sleep_wait;f.soft_start.value=d.soft_start;f.soft_stop.value=d.soft_stop;f.block_detect.value=d.block_detect;f.led_flash_ms.value=d.led_flash_ms;f.runtime_save_min.value=d.runtime_save_min;f.auto_restore.value=d.auto_restore?1:0}"
     "function reloadCfg(f){fetch('/api/config').then(r=>r.json()).then(j=>{if(j.ok)applyCfg(j.data,f)})}"
     "function saveCfg(f){var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving';setMsg('Saving...','muted');fetch('/api/config',{method:'POST',body:new URLSearchParams(new FormData(f))}).then(r=>r.json().then(j=>({ok:r.ok,j:j}))).then(x=>{b.disabled=false;b.textContent='Save';if(x.ok&&x.j.ok){applyCfg(x.j.data,f);var n=x.j.changed||0;setMsg('Saved - '+(n?n+' changed':'no changes')+' - '+new Date().toLocaleTimeString(),'oktxt')}else{reloadCfg(f);setMsg(x.j&&x.j.error?x.j.error:'Save failed','errtxt')}}).catch(()=>{b.disabled=false;b.textContent='Save';setMsg('Save failed: network error','errtxt')})}"
     "function finishIr(i,n,seq,tok){fetch('/api/status').then(r=>r.json()).then(j=>{if(tok!=irToken)return;var d=j.data;if(d&&d.ir_learn_seq!=seq){var v='Protocol '+d.ir_last_protocol+' - '+d.ir_last_code;setIrRow(i,v,'');setIr('Learned '+n+' - '+v,'oktxt');setTimeout(()=>location.reload(),600)}else setIr('Learn timeout - no valid signal','errtxt')}).catch(()=>setIr('Learn timeout - no valid signal','errtxt'))}"
@@ -297,6 +299,11 @@ void FanWeb::handleConfigPage() {
     snprintf(buf, sizeof(buf), "%d", _controller->getLedFlashDuration());
     Esp8266BaseWeb::sendChunk(buf);
     Esp8266BaseWeb::sendContent_P(CONFIG_LED_FLASH_END);
+
+    // Runtime Save
+    snprintf(buf, sizeof(buf), "%u", _controller->getRuntimeSaveIntervalMinutes());
+    Esp8266BaseWeb::sendChunk(buf);
+    Esp8266BaseWeb::sendContent_P(CONFIG_RUNTIME_SAVE_END);
 
     // Auto Restore
     Esp8266BaseWeb::sendChunk(_controller->getAutoRestore() ? "selected" : "");
@@ -473,6 +480,7 @@ void FanWeb::handleApiConfig() {
         bool has_block_detect = false;
         bool has_sleep_wait = false;
         bool has_led_flash_ms = false;
+        bool has_runtime_save_min = false;
         bool has_auto_restore = false;
         uint8_t min_speed = _controller->getMinEffectiveSpeed();
         uint16_t soft_start = _controller->getSoftStartTime();
@@ -480,6 +488,7 @@ void FanWeb::handleApiConfig() {
         uint16_t block_detect = _controller->getBlockDetectTime();
         uint16_t sleep_wait = _controller->getSleepWaitTime();
         uint16_t led_flash_ms = _controller->getLedFlashDuration();
+        uint8_t runtime_save_min = _controller->getRuntimeSaveIntervalMinutes();
         bool auto_restore = _controller->getAutoRestore();
 
         if (server.hasArg("min_speed")) {
@@ -536,6 +545,15 @@ void FanWeb::handleApiConfig() {
             led_flash_ms = static_cast<uint16_t>(parsed);
             has_led_flash_ms = true;
         }
+        if (server.hasArg("runtime_save_min")) {
+            uint32_t parsed = 0;
+            if (!parseUintArg(server.arg("runtime_save_min"), 1, 60, &parsed)) {
+                server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid runtime_save_min\"}");
+                return;
+            }
+            runtime_save_min = static_cast<uint8_t>(parsed);
+            has_runtime_save_min = true;
+        }
         if (server.hasArg("auto_restore")) {
             uint32_t parsed = 0;
             if (!parseUintArg(server.arg("auto_restore"), 0, 1, &parsed)) {
@@ -570,6 +588,10 @@ void FanWeb::handleApiConfig() {
             _controller->setLedFlashDuration(led_flash_ms);
             changed++;
         }
+        if (has_runtime_save_min && runtime_save_min != _controller->getRuntimeSaveIntervalMinutes()) {
+            _controller->setRuntimeSaveIntervalMinutes(runtime_save_min);
+            changed++;
+        }
         if (has_auto_restore && auto_restore != _controller->getAutoRestore()) {
             _controller->setAutoRestore(auto_restore);
             changed++;
@@ -581,10 +603,10 @@ void FanWeb::handleApiConfig() {
         }
         ESP8266BASE_LOG_I("FanWeb", "config_save_complete changed=%u flushed=%u",
                           (unsigned)changed, flushed ? 1U : 0U);
-        char buf[256];
+        char buf[320];
         snprintf(buf, sizeof(buf),
             "{\"ok\":%s,\"changed\":%u,\"flushed\":%s,\"data\":{\"min_effective_speed\":%d,\"soft_start\":%d,\"soft_stop\":%d,"
-            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"auto_restore\":%s}}",
+            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"runtime_save_min\":%u,\"auto_restore\":%s}}",
             flushed ? "true" : "false",
             (unsigned)changed,
             flushed ? "true" : "false",
@@ -594,20 +616,22 @@ void FanWeb::handleApiConfig() {
             _controller->getBlockDetectTime(),
             _controller->getSleepWaitTime(),
             _controller->getLedFlashDuration(),
+            _controller->getRuntimeSaveIntervalMinutes(),
             _controller->getAutoRestore() ? "true" : "false"
         );
         server.send(flushed ? 200 : 500, "application/json", buf);
     } else {
-        char buf[256];
+        char buf[320];
         snprintf(buf, sizeof(buf),
             "{\"ok\":true,\"data\":{\"min_effective_speed\":%d,\"soft_start\":%d,\"soft_stop\":%d,"
-            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"auto_restore\":%s}}",
+            "\"block_detect\":%d,\"sleep_wait\":%d,\"led_flash_ms\":%d,\"runtime_save_min\":%u,\"auto_restore\":%s}}",
             _controller->getMinEffectiveSpeed(),
             _controller->getSoftStartTime(),
             _controller->getSoftStopTime(),
             _controller->getBlockDetectTime(),
             _controller->getSleepWaitTime(),
             _controller->getLedFlashDuration(),
+            _controller->getRuntimeSaveIntervalMinutes(),
             _controller->getAutoRestore() ? "true" : "false"
         );
         server.send(200, "application/json", buf);

@@ -278,6 +278,15 @@ void FanController::setMinEffectiveSpeed(uint8_t speed) {
     _min_effective_speed = speed;
     _fan.setMinEffectiveSpeed(_min_effective_speed);
     Esp8266BaseConfig::setInt(KEY_MIN_SPEED, _min_effective_speed);
+    if (_target_speed > 0 && _target_speed < _min_effective_speed) {
+        _target_speed = _min_effective_speed;
+        _syncGearFromSpeed(_target_speed);
+        if (_state != SYS_ERROR) {
+            _applySpeed(_target_speed, true);
+        } else {
+            _saveRuntimeState(true);
+        }
+    }
 }
 
 uint16_t FanController::getSoftStartTime() const {

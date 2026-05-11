@@ -308,6 +308,29 @@ void test_fan_driver_soft_stop() {
     TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
 }
 
+void test_fan_driver_running_speed_change_ramps_from_current_speed() {
+    FanDriver fan(5, 12);
+    fan.begin();
+    fan.setBlockDetectTime(10000);
+
+    fan.setSpeed(25);
+    g_mock_millis = 1000; fan.tick();
+    TEST_ASSERT_EQUAL(FAN_STATE_RUNNING, fan.getState());
+    TEST_ASSERT_EQUAL(25, fan.getSpeed());
+
+    fan.setSpeed(75);
+    TEST_ASSERT_EQUAL(FAN_STATE_SOFT_START, fan.getState());
+    TEST_ASSERT_EQUAL(25, fan.getSpeed());
+
+    g_mock_millis = 1500; fan.tick();
+    TEST_ASSERT_EQUAL(50, fan.getSpeed());
+    TEST_ASSERT_EQUAL(255 - (50 * 255 / 100), g_pwm_value[5]);
+
+    g_mock_millis = 2000; fan.tick();
+    TEST_ASSERT_EQUAL(FAN_STATE_RUNNING, fan.getState());
+    TEST_ASSERT_EQUAL(75, fan.getSpeed());
+}
+
 void test_fan_driver_block_detection() {
     FanDriver fan(5, 12);
     fan.begin();
@@ -772,6 +795,26 @@ void test_controller_min_effective_speed_applies_to_soft_start_floor() {
     ctrl.setSpeed(30);
     g_mock_millis = 1; ctrl.tick();
     TEST_ASSERT_EQUAL(30, ctrl.getCurrentSpeed());
+}
+
+void test_controller_min_effective_speed_retargets_running_low_speed() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setSoftStartTime(0);
+    ctrl.setBlockDetectTime(60000);
+
+    ctrl.setSpeed(25);
+    TEST_ASSERT_EQUAL(25, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(25, ctrl.getCurrentSpeed());
+
+    ctrl.setMinEffectiveSpeed(30);
+    TEST_ASSERT_EQUAL(30, ctrl.getMinEffectiveSpeed());
+    TEST_ASSERT_EQUAL(30, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(30, ctrl.getCurrentSpeed());
+    TEST_ASSERT_EQUAL(2, ctrl.getCurrentGear());
+    TEST_ASSERT_EQUAL(30, Esp8266BaseConfig::getInt("fan_last_speed", -1));
 }
 
 void test_controller_set_speed_clamps_public_input_to_100() {
@@ -1724,6 +1767,22 @@ void test_web_status_page_topline_shows_target_when_different() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Target <span id=tgtTop>75"));
 }
 
+void test_web_status_page_command_feedback_script() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+
+    FanWeb::handleStatusPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "id=cmdMsg"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "if(!r.ok)throw 0"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Failed - retry"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "busy=false"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "if(lastD)draw(lastD)"));
+    Esp8266BaseWeb::sendFooter();
+}
+
 void test_web_api_status_reports_business_metrics() {
     FanDriver fan(5, 12); ButtonDriver btn(14, 4);
     LedIndicator led(2, true); IRReceiverDriver ir(13);
@@ -2117,6 +2176,7 @@ int main() {
     RUN_TEST(test_fan_driver_set_speed);
     RUN_TEST(test_fan_driver_open_drain_pwm_mapping);
     RUN_TEST(test_fan_driver_soft_stop);
+    RUN_TEST(test_fan_driver_running_speed_change_ramps_from_current_speed);
     RUN_TEST(test_fan_driver_block_detection);
     RUN_TEST(test_fan_driver_reset_block);
     RUN_TEST(test_fan_driver_rpm_calculation);
@@ -2154,6 +2214,7 @@ int main() {
     RUN_TEST(test_controller_set_speed);
     RUN_TEST(test_controller_min_effective_speed);
     RUN_TEST(test_controller_min_effective_speed_applies_to_soft_start_floor);
+    RUN_TEST(test_controller_min_effective_speed_retargets_running_low_speed);
     RUN_TEST(test_controller_set_speed_clamps_public_input_to_100);
     RUN_TEST(test_controller_stop);
     RUN_TEST(test_controller_stop_clears_error_state);
@@ -2206,6 +2267,7 @@ int main() {
     RUN_TEST(test_web_status_page_merges_blocked_and_shows_business_metrics);
     RUN_TEST(test_web_status_page_topline_hides_target_when_equal);
     RUN_TEST(test_web_status_page_topline_shows_target_when_different);
+    RUN_TEST(test_web_status_page_command_feedback_script);
     RUN_TEST(test_web_api_status_reports_business_metrics);
     RUN_TEST(test_web_api_timer);
     RUN_TEST(test_web_api_stop);

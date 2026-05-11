@@ -40,7 +40,7 @@
 | 术语 | 定义 |
 |------|------|
 | 档位 | 风扇运行档位，0-4 档，分别对应 0%/25%/50%/75%/100% 转速，不循环 |
-| 软启动 | 从停止到目标转速的平滑渐变，时间可配置 0-10 秒，默认 1 秒 |
+| 软启动 | 非零目标变更时从当前输出到目标转速的平滑渐变，时间可配置 0-10 秒，默认 1 秒 |
 | 软停止 | 从运行到停止的平滑渐变，时间可配置 0-10 秒，默认 1 秒 |
 | 堵转保护 | 输出≥最低有效转速但连续检测时间无转速反馈时，切断输出并报警 |
 | 堵转恢复 | 保护触发后，任意控制源发送启动指令可触发恢复尝试（1.5s 内检测转速）；恢复失败保持故障态并强制输出 0，停止指令可清除故障 |
@@ -97,9 +97,10 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> FAN_STATE_IDLE
-    FAN_STATE_IDLE --> FAN_STATE_SOFT_START : 收到启动指令 + 配置软启动
+    FAN_STATE_IDLE --> FAN_STATE_SOFT_START : 收到非零调速指令 + 配置软启动
     FAN_STATE_IDLE --> FAN_STATE_RUNNING : 收到启动指令 + 无软启动
     FAN_STATE_SOFT_START --> FAN_STATE_RUNNING : 渐变完成
+    FAN_STATE_RUNNING --> FAN_STATE_SOFT_START : 运行中收到新非零目标 + 配置软启动
     FAN_STATE_RUNNING --> FAN_STATE_SOFT_STOP : 收到停止指令 + 配置软停止
     FAN_STATE_RUNNING --> FAN_STATE_IDLE : 收到停止指令 + 无软停止
     FAN_STATE_SOFT_STOP --> FAN_STATE_IDLE : 渐变完成
@@ -110,7 +111,7 @@ stateDiagram-v2
 | 状态 | 含义 | 进入条件 | 退出条件 |
 |------|------|----------|----------|
 | FAN_STATE_IDLE | 风扇停止 | 初始化完成 / 停止指令 / 定时结束 | 收到调速指令（转速>0） |
-| FAN_STATE_SOFT_START | 软启动渐变中 | 收到启动指令且软启动时间>0 | 转速渐变到目标值 |
+| FAN_STATE_SOFT_START | 非零目标渐变中 | 收到非零调速指令且软启动时间>0 | 转速渐变到目标值 |
 | FAN_STATE_RUNNING | 正常运行 | 软启动完成 / 无软启动直接启动 | 停止指令 / 堵转故障 / 定时结束 |
 | FAN_STATE_SOFT_STOP | 软停止渐变中 | 收到停止指令且软停止时间>0 | 转速降到 0 |
 | FAN_STATE_BLOCKED | 堵转保护 | 堵转检测触发 | resetBlock/forceStop |

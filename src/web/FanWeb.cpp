@@ -53,6 +53,33 @@ const char* irKeyName(uint8_t index) {
         default: return "Unknown";
     }
 }
+
+void formatStateDetail(const FanController& controller, char* out, size_t out_size) {
+    if (out == nullptr || out_size == 0) return;
+
+    const bool blocked = controller.isBlocked();
+    switch (controller.getState()) {
+        case SYS_IDLE:
+            snprintf(out, out_size, "Idle - stopped");
+            break;
+        case SYS_RUNNING:
+            if (controller.getCurrentSpeed() != controller.getTargetSpeed()) {
+                snprintf(out, out_size, "Running - ramping to %u%%", controller.getTargetSpeed());
+            } else {
+                snprintf(out, out_size, "Running - stable");
+            }
+            break;
+        case SYS_SLEEP:
+            snprintf(out, out_size, "Sleep - modem sleep");
+            break;
+        case SYS_ERROR:
+            snprintf(out, out_size, blocked ? "Error / Blocked - no RPM feedback" : "Error - check device");
+            break;
+        default:
+            snprintf(out, out_size, blocked ? "Blocked - no RPM feedback" : "Unknown");
+            break;
+    }
+}
 }
 
 FanWeb::FanWeb(FanController& controller, IRReceiverDriver& ir) {
@@ -118,7 +145,7 @@ static const char FAN_SCRIPT_TIMER_MID[] PROGMEM =
     "function rf(s){s=parseInt(s||0);if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'}"
     "function tt(o,t){var w=document.getElementById('targetTopWrap');if(w)w.style.display=o==t?'none':''}"
     "function cmd(t,c){var m=document.getElementById('cmdMsg');if(m){m.textContent=t;m.className='savebar '+c}}"
-    "var pollMs=3000,pollTimer=0,lastD=null,busy=false;function draw(d){lastD=d;var st=d.blocked?(d.state=='Error'?'Error / Blocked':'Blocked'):d.state;e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('runTotal',rf(d.run_duration));e('runBoot',rf(d.boot_run_duration));e('rssi',d.rssi+' dBm');rem=d.timer_remaining;pollMs=d.speed==d.target_speed?3000:500;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
+    "var pollMs=3000,pollTimer=0,lastD=null,busy=false;function draw(d){lastD=d;var st=d.state_detail||(d.blocked?(d.state=='Error'?'Error / Blocked - no RPM feedback':'Blocked - no RPM feedback'):d.state);e('st',st);document.getElementById('st').className=d.blocked?'errtxt':'';e('tgt',d.target_speed+'%');e('tgtTop',d.target_speed);e('out',d.speed+'%');e('outTop',d.speed);e('rpmTop',(d.rpm||0)+' rpm');tt(d.speed,d.target_speed);e('gear',d.gear);e('rpm',(d.rpm||0)+' rpm');e('tim',tf(d.timer_remaining));e('runTotal',rf(d.run_duration));e('runBoot',rf(d.boot_run_duration));e('rssi',d.rssi+' dBm');rem=d.timer_remaining;pollMs=d.speed==d.target_speed?3000:500;document.getElementById('sv').value=d.target_speed;document.getElementById('tv').value=Math.floor(rem/60)}"
     "function sched(ms){clearTimeout(pollTimer);pollTimer=setTimeout(poll,ms)}function poll(){fetch('/api/status').then(r=>r.json()).then(j=>{if(j.ok)draw(j.data);sched(pollMs)}).catch(()=>sched(3000))}"
     "function post(u,b){if(busy)return false;busy=true;cmd('Sending...','muted');fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(r=>{if(!r.ok)throw 0;cmd('Done','oktxt');setTimeout(()=>cmd('Ready','muted'),1200);setTimeout(poll,250);busy=false}).catch(()=>{busy=false;if(lastD)draw(lastD);cmd('Failed - retry','errtxt');poll()});return true}"
     "function spd(v){v=parseInt(v||0);if(v>=0&&v<=100&&!busy){e('tgt',v+'%');e('tgtTop',v);e('rpmTop','-- rpm');e('rpm','-- rpm');tt(parseInt(document.getElementById('outTop').textContent||0),v);document.getElementById('sv').value=v;post('/api/speed','speed='+v)}}"
@@ -154,17 +181,8 @@ void FanWeb::handleStatusPage() {
     
     // State
     const bool blocked = _controller->isBlocked();
-    const char* stateText = "Unknown";
-    switch (_controller->getState()) {
-        case SYS_IDLE: stateText = "Idle"; break;
-        case SYS_RUNNING: stateText = "Running"; break;
-        case SYS_SLEEP: stateText = "Sleep"; break;
-        case SYS_ERROR: stateText = blocked ? "Error / Blocked" : "Error"; break;
-        default: break;
-    }
-    if (blocked && _controller->getState() != SYS_ERROR) {
-        stateText = "Blocked";
-    }
+    char stateText[48];
+    formatStateDetail(*_controller, stateText, sizeof(stateText));
     snprintf(buf, sizeof(buf), "<div class='stat state'><span>State</span><b id=st class=%s>%s</b></div>",
              blocked ? "errtxt" : "", stateText);
     Esp8266BaseWeb::sendChunk(buf);
@@ -359,6 +377,7 @@ void FanWeb::handleApiStatus() {
     
     char buf[1024];
     char clock[24];
+    char stateDetail[48];
     const char* stateStr;
     switch (_controller->getState()) {
         case SYS_IDLE: stateStr = "Idle"; break;
@@ -375,17 +394,18 @@ void FanWeb::handleApiStatus() {
     } else {
         strcpy(clock, "N/A");
     }
+    formatStateDetail(*_controller, stateDetail, sizeof(stateDetail));
     
     uint8_t ir_key = _ir->getLearnedKeyIndex();
     snprintf(buf, sizeof(buf),
-        "{\"ok\":true,\"data\":{\"state\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"gear\":%u,\"rpm\":%u,\"timer_remaining\":%lu,"
+        "{\"ok\":true,\"data\":{\"state\":\"%s\",\"state_detail\":\"%s\",\"speed\":%d,\"target_speed\":%d,\"gear\":%u,\"rpm\":%u,\"timer_remaining\":%lu,"
         "\"run_duration\":%lu,\"boot_run_duration\":%lu,\"blocked\":%s,\"min_speed\":%u,\"soft_start\":%u,\"soft_stop\":%u,"
         "\"block_detect\":%u,\"sleep_wait\":%u,\"auto_restore\":%s,\"led_flash_ms\":%u,"
         "\"ip\":\"%s\",\"rssi\":%ld,\"clock\":\"%s\","
         "\"ir_learning\":%s,\"ir_key\":%u,\"ir_remaining\":%lu,\"ir_learn_seq\":%lu,"
         "\"ir_reject_seq\":%lu,\"ir_duplicate_key\":%u,"
         "\"ir_last_protocol\":%u,\"ir_last_code\":\"0x%016llX\"}}",
-        stateStr, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
+        stateStr, stateDetail, _controller->getCurrentSpeed(), _controller->getTargetSpeed(),
         _controller->getCurrentGear(),
         _controller->getCurrentRpm(),
         (unsigned long)_controller->getTimerRemaining(),

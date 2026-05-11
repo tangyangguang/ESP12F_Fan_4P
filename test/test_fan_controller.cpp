@@ -1705,7 +1705,7 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
 
     FanWeb::handleStatusPage();
-    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Error / Blocked"));
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Error / Blocked - no RPM feedback"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>IP</span>"));
     TEST_ASSERT_NULL(strstr(g_web_page_body, "<span>Blocked</span>"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "<span>RPM</span>"));
@@ -1728,6 +1728,24 @@ void test_web_status_page_merges_blocked_and_shows_business_metrics() {
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('runBoot',rf(d.boot_run_duration))"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "pollMs=d.speed==d.target_speed?3000:500"));
     TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "e('rpmTop','-- rpm');e('rpm','-- rpm')"));
+}
+
+void test_web_status_page_state_detail_for_running_ramp() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    FanWeb web(ctrl, ir);
+    ctrl.begin();
+    ctrl.setBlockDetectTime(60000);
+
+    ctrl.setSpeed(75);
+    g_mock_millis = 500; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+    TEST_ASSERT_TRUE(ctrl.getCurrentSpeed() < ctrl.getTargetSpeed());
+
+    FanWeb::handleStatusPage();
+    TEST_ASSERT_NOT_NULL(strstr(g_web_page_body, "Running - ramping to 75%"));
+    Esp8266BaseWeb::sendFooter();
 }
 
 void test_web_status_page_topline_hides_target_when_equal() {
@@ -1800,6 +1818,7 @@ void test_web_api_status_reports_business_metrics() {
     MockWebServer::setMethod(HTTP_GET);
     FanWeb::handleApiStatus();
     TEST_ASSERT_EQUAL(200, MockWebServer::lastCode());
+    TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"state_detail\":\"Idle - stopped\""));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"gear\":0"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"rpm\":0"));
     TEST_ASSERT_NOT_NULL(strstr(MockWebServer::lastBody(), "\"run_duration\":0"));
@@ -2265,6 +2284,7 @@ int main() {
     RUN_TEST(test_web_api_speed_set);
     RUN_TEST(test_web_api_speed_get_reports_target_when_blocked);
     RUN_TEST(test_web_status_page_merges_blocked_and_shows_business_metrics);
+    RUN_TEST(test_web_status_page_state_detail_for_running_ramp);
     RUN_TEST(test_web_status_page_topline_hides_target_when_equal);
     RUN_TEST(test_web_status_page_topline_shows_target_when_different);
     RUN_TEST(test_web_status_page_command_feedback_script);

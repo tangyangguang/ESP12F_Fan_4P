@@ -254,20 +254,37 @@ void test_fan_driver_begin() {
     TEST_ASSERT_EQUAL(INPUT_PULLUP, g_pin_mode[12]);
     TEST_ASSERT_EQUAL(25000,        g_pwm_freq);
     TEST_ASSERT_EQUAL(255,          g_pwm_range);
-    TEST_ASSERT_EQUAL(0,            g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(255,          g_pwm_value[5]);
     TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
 }
 
 void test_fan_driver_set_speed() {
     FanDriver fan(5, 12);
     fan.begin();
+    fan.setSoftStartTime(0);
     TEST_ASSERT_TRUE(fan.setSpeed(50));
-    TEST_ASSERT_EQUAL(FAN_STATE_SOFT_START, fan.getState());
-
-    g_mock_millis = 2000;
-    fan.tick();
     TEST_ASSERT_EQUAL(50, fan.getSpeed());
     TEST_ASSERT_EQUAL(FAN_STATE_RUNNING, fan.getState());
+    TEST_ASSERT_EQUAL(255 - (50 * 255 / 100), g_pwm_value[5]);
+}
+
+void test_fan_driver_open_drain_pwm_mapping() {
+    FanDriver fan(5, 12);
+    fan.begin();
+    fan.setSoftStartTime(0);
+    fan.setSoftStopTime(0);
+
+    TEST_ASSERT_EQUAL(255, g_pwm_value[5]);
+    TEST_ASSERT_TRUE(fan.setSpeed(25));
+    TEST_ASSERT_EQUAL(255 - (25 * 255 / 100), g_pwm_value[5]);
+    TEST_ASSERT_TRUE(fan.setSpeed(50));
+    TEST_ASSERT_EQUAL(255 - (50 * 255 / 100), g_pwm_value[5]);
+    TEST_ASSERT_TRUE(fan.setSpeed(75));
+    TEST_ASSERT_EQUAL(255 - (75 * 255 / 100), g_pwm_value[5]);
+    TEST_ASSERT_TRUE(fan.setSpeed(100));
+    TEST_ASSERT_EQUAL(0, g_pwm_value[5]);
+    TEST_ASSERT_TRUE(fan.setSpeed(0));
+    TEST_ASSERT_EQUAL(255, g_pwm_value[5]);
 }
 
 void test_fan_driver_soft_stop() {
@@ -283,7 +300,7 @@ void test_fan_driver_soft_stop() {
 
     g_mock_millis = 2500; fan.tick();
     TEST_ASSERT_EQUAL(25, fan.getSpeed());
-    TEST_ASSERT_EQUAL(25 * 255 / 100, g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(255 - (25 * 255 / 100), g_pwm_value[5]);
     TEST_ASSERT_EQUAL(FAN_STATE_SOFT_STOP, fan.getState());
 
     g_mock_millis = 4000; fan.tick();
@@ -302,7 +319,7 @@ void test_fan_driver_block_detection() {
     g_mock_millis = 2600; fan.tick();
     TEST_ASSERT_TRUE(fan.isBlocked());
     TEST_ASSERT_EQUAL(FAN_STATE_BLOCKED, fan.getState());
-    TEST_ASSERT_EQUAL(0, g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(255, g_pwm_value[5]);
 }
 
 void test_fan_driver_reset_block() {
@@ -1307,8 +1324,36 @@ void test_controller_block_recovery_failure_stays_error() {
     TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
     TEST_ASSERT_EQUAL(0, fan.getSpeed());
     TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
-    TEST_ASSERT_EQUAL(0, g_pwm_value[5]);
+    TEST_ASSERT_EQUAL(255, g_pwm_value[5]);
     TEST_ASSERT_EQUAL(0, Esp8266BaseConfig::getInt("fan_last_speed", -1));
+}
+
+void test_controller_block_recovery_failure_forces_stop_before_driver_reblocks() {
+    FanDriver fan(5, 12); ButtonDriver btn(14, 4);
+    LedIndicator led(2, true); IRReceiverDriver ir(13);
+    FanController ctrl(fan, btn, led, ir);
+    ctrl.begin();
+    ctrl.setSoftStartTime(0);
+    ctrl.setBlockDetectTime(500);
+
+    ctrl.setSpeed(50);
+    g_mock_millis = 600; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_RUNNING, ctrl.getState());
+
+    g_mock_millis = 1200; ctrl.tick();
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+
+    ctrl.setBlockDetectTime(5000);
+    ctrl.setSpeed(50);
+    g_mock_millis = 2700; ctrl.tick();
+
+    TEST_ASSERT_EQUAL(SYS_ERROR, ctrl.getState());
+    TEST_ASSERT_TRUE(ctrl.isBlocked());
+    TEST_ASSERT_FALSE(fan.isBlocked());
+    TEST_ASSERT_EQUAL(FAN_STATE_IDLE, fan.getState());
+    TEST_ASSERT_EQUAL(0, fan.getSpeed());
+    TEST_ASSERT_EQUAL(0, ctrl.getTargetSpeed());
+    TEST_ASSERT_EQUAL(255, g_pwm_value[5]);
 }
 
 void test_controller_block_recovery_success_returns_to_running() {
@@ -2070,6 +2115,7 @@ int main() {
     // FanDriver
     RUN_TEST(test_fan_driver_begin);
     RUN_TEST(test_fan_driver_set_speed);
+    RUN_TEST(test_fan_driver_open_drain_pwm_mapping);
     RUN_TEST(test_fan_driver_soft_stop);
     RUN_TEST(test_fan_driver_block_detection);
     RUN_TEST(test_fan_driver_reset_block);
@@ -2138,6 +2184,7 @@ int main() {
     RUN_TEST(test_controller_ir_persistence_keeps_equivalent_existing_format);
     RUN_TEST(test_controller_clear_ir_code_persists_empty_value);
     RUN_TEST(test_controller_block_recovery_failure_stays_error);
+    RUN_TEST(test_controller_block_recovery_failure_forces_stop_before_driver_reblocks);
     RUN_TEST(test_controller_block_recovery_success_returns_to_running);
     RUN_TEST(test_controller_wifi_disconnected_uses_slow_blink);
     RUN_TEST(test_controller_wifi_disconnected_overrides_running_gear);

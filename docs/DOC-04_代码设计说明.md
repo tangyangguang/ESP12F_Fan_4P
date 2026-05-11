@@ -417,7 +417,7 @@ Esp8266Base::begin();
 | GPIO0 | BOOT 键 | 长按 1s 清除 WiFi 凭证 |
 | GPIO2 | 板载 LED | ESP-12E 模块内置，低电平亮，支持 PWM 调光 |
 | GPIO4 | 减速键 | 内部上拉，按下为低，仅短按 |
-| GPIO5 | PWM_OUT | 风扇 PWM 输出，频率 25KHz，软件固定 `analogWriteRange(255)` |
+| GPIO5 | PWM_OUT | 风扇 PWM 输出，频率 25KHz；软件固定 `analogWriteRange(255)`，GPIO5 侧为开漏下拉驱动反相写入 |
 | GPIO12 | FAN_TACH | 风扇转速反馈输入 |
 | GPIO13 | IR_RECV | 1838 红外接收头 |
 | GPIO14 | 加速键 | 内部上拉，按下为低，仅短按 |

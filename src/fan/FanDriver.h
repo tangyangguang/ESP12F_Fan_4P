@@ -35,6 +35,7 @@ public:
 private:
     static void tachISR();
     static FanDriver* s_instance;
+    void writeFanDuty(uint8_t speed);
 
     uint8_t _pwm_pin;
     uint8_t _tach_pin;

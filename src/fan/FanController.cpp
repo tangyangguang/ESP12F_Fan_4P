@@ -522,6 +522,26 @@ void FanController::_processIREvents() {
             ESP8266BASE_LOG_I("FanCtrl", "IR: Timer set 8h");
             break;
 
+        case IR_EVENT_GEAR_1:
+            setSpeed(GEAR_SPEED[1]);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Gear 1 (%d%%)", GEAR_SPEED[1]);
+            break;
+
+        case IR_EVENT_GEAR_2:
+            setSpeed(GEAR_SPEED[2]);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Gear 2 (%d%%)", GEAR_SPEED[2]);
+            break;
+
+        case IR_EVENT_GEAR_3:
+            setSpeed(GEAR_SPEED[3]);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Gear 3 (%d%%)", GEAR_SPEED[3]);
+            break;
+
+        case IR_EVENT_GEAR_4:
+            setSpeed(GEAR_SPEED[4]);
+            ESP8266BASE_LOG_I("FanCtrl", "IR: Gear 4 (%d%%)", GEAR_SPEED[4]);
+            break;
+
         default:
             break;
     }

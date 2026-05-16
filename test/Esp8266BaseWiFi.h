@@ -16,7 +16,6 @@ namespace Esp8266BaseWiFi {
     bool isConnected();
     const char* ip();
     bool clearCredentials();
-    bool setHostname(const char* hostname);
     Esp8266BaseWiFiState state();
 }
 

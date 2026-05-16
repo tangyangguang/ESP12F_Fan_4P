@@ -183,9 +183,9 @@ main.cpp (Application)
 **项目代码只需调用**：
 ```cpp
 Esp8266Base::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
-Esp8266Base::setHostname("esp-fan");
 Esp8266Base::begin();
 ```
+默认 hostname 通过构建宏 `ESP8266BASE_DEFAULT_HOSTNAME="esp-fan"` 指定，设备已保存的 `eb_hostname` 优先。
 
 ---
 

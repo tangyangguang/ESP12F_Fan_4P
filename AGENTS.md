@@ -4,7 +4,7 @@
 
 - 本项目是 `ESP12F_Fan_4P`，目标硬件为 ESP8266 ESP-12F / ESP-12E，用于四线 PWM 风扇控制。
 - 设备主要通过局域网 Web 页面、本地按键和红外遥控操作。
-- 默认访问地址为 `http://esp-fan.local/`，主要页面包括 `/fan`、`/config`、`/esp8266base`、`/wifi`、`/ota`、`/logs`、`/auth`、`/reboot`。
+- 默认访问地址为 `http://esp-fan.local/`，主要页面包括 `/fan`、`/config`、`/ir`、`/esp8266base`、`/logs`、`/system`。
 
 ## 最高工程原则
 
@@ -25,7 +25,7 @@
 - 全局日志保持 DEBUG；文件日志保持 WARN，只持久化 WARN 及以上级别事件和基础库启动分割信息。
 - NTP 同步后，日志应优先使用正确的日期时间。
 - 配置写审计保持开启，且本项目不要求脱敏，便于个人调试观察。
-- 项目默认保持 `-DESP8266BASE_LOG_LEVEL=0` 和 `-DESP8266BASE_LOG_FILE_LEVEL=2`，方便现场调试且降低文件日志写入量。
+- 项目默认保持 `-DESP8266BASE_LOG_LEVEL=0` 和 `-DESP8266BASE_FILELOG_DEFAULT_MODE=ESP8266BASE_FILELOG_MODE_WARN`，方便现场调试且降低文件日志写入量。
 - 配置读审计由 Esp8266Base 的 `ESP8266BASE_CFG_READ_AUDIT_LEVEL` 单独控制；临时观察所有配置读取时再显式加入该宏。
 
 ## 配置保存原则
@@ -42,10 +42,11 @@
 - `/fan` 页面应重点服务高频操作：状态查看、速度设定、定时设定、取消定时、停止风扇。
 - 速度设定使用“预设档位 + 数字输入”的方式。
 - 定时设定使用“预设档位 + 数字输入”的方式。
-- 按钮、输入框和表单控件必须视觉对齐，尤其是 `/fan` 与 `/config` 页面。
+- 按钮、输入框和表单控件必须视觉对齐，尤其是 `/fan`、`/config` 与 `/ir` 页面。
 - 长内容状态需要拆分展示，例如 WiFi 信息中的 IP、RSSI，时间信息中的 Clock。
 - 不保留含义不清的按钮或文案；按钮名称必须能直接说明动作。
 - 保存配置后必须有明确交互反馈，区分保存成功、无变化、保存失败。
+- 红外学习功能独立放在 `/ir` 页面，不放入 `/config`。
 
 ## API 与路由约束
 - Esp8266Base 当前应用 API 配额为 6 个，本项目注册 API 时必须注意配额。
@@ -77,7 +78,7 @@ pio test -e native
 pio run -e esp12f
 ```
 
-- 涉及 Web 页面时，应尽量结合实际设备页面验证 `/fan`、`/config`、`/logs`。
+- 涉及 Web 页面时，应尽量结合实际设备页面验证 `/fan`、`/config`、`/ir`、`/logs`。
 - 涉及 OTA 时，应确认 `ESP8266BASE_USE_WEB=1` 与 `ESP8266BASE_USE_OTA=1`，并在设备页验证 `/ota` GET 页面和 POST 上传路径。
 - 涉及日志、配置或启动流程时，应查看串口日志确认行为。
 - 不把“编译通过”当成 Web 交互已验证。

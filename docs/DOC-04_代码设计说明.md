@@ -311,13 +311,14 @@ private:
 | 路径 | 功能 | 内容 |
 |------|------|------|
 | `/fan` | 状态主页 | 状态和简洁原因、目标/输出速度、档位、RPM、定时、累计总运行时长、本次启动后运行时长、RSSI |
-| `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、访问密码、红外学习、红外命令学习状态、上电恢复策略 |
+| `/config` | 参数配置页 | 最低有效转速、软启动/软停止时间、堵转检测时间、休眠等待时间、操作反馈闪烁时长、运行状态保存间隔和上电恢复策略 |
 | `/esp8266base` | 系统首页 | Esp8266Base 内置 Network、Device、Time 状态页，显示 OTA free 等基础状态 |
-| `/wifi` | WiFi 配网页 | Esp8266Base 内置 STA/AP 配网入口 |
-| `/ota` | OTA 升级页 | Esp8266Base 内置 Web OTA 页面和上传处理，已通过 `ESP8266BASE_USE_OTA=1` 启用 |
 | `/logs` | 运行日志页 | Esp8266Base 内置文件日志页面 |
-| `/auth` | 密码页 | Esp8266Base 内置 Web 密码修改页面 |
-| `/reboot` | 工具页 | Esp8266Base 内置清空日志和重启入口 |
+| `/system` | 系统维护页 | Esp8266Base 内置低频维护入口，包含 WiFi Settings、Auth Password、OTA Update、FileLog、Clear logs、Reboot |
+| `/wifi` | WiFi 配网页 | Esp8266Base 内置 STA/AP 配网页面，由 `/system` 进入 |
+| `/ota` | OTA 升级页 | Esp8266Base 内置 Web OTA 页面和上传处理，已通过 `ESP8266BASE_USE_OTA=1` 启用，由 `/system` 进入 |
+| `/auth` | 密码页 | Esp8266Base 内置 Web 密码修改页面，由 `/system` 进入 |
+| `/reboot` | 重启动作 | 仅保留 POST 重启动作，不提供 GET 页面 |
 | `/health` | 健康检查 | Esp8266Base 内置无需认证 JSON 健康信息 |
 
 ### 4.3 状态主页布局
@@ -404,9 +405,9 @@ private:
 **项目代码只需调用**：
 ```cpp
 Esp8266Base::setFirmwareInfo("ESP12F_Fan_4P", "0.1.0");
-Esp8266Base::setHostname("esp-fan");
 Esp8266Base::begin();
 ```
+默认 hostname 通过构建宏 `ESP8266BASE_DEFAULT_HOSTNAME="esp-fan"` 指定，设备已保存的 `eb_hostname` 优先。
 
 ---
 
